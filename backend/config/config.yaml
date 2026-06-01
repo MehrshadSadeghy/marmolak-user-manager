@@ -1,0 +1,21 @@
+api:
+  debug: true
+  host: 0.0.0.0
+  port: 8080
+  title: Raya Trade
+  version: 0.1.0
+
+postgres:
+  host: 127.0.0.1
+  port: 5432
+  database: raya_trade_db
+  username: raya_user
+  pg_password: test1234
+
+ai_model_config:
+  name: "gemini-2.5-flash"
+  temperature: 0.1
+  timeout: 60
+  max_tokens: 10240
+  model_provider: "google_genai"
+  streaming: null

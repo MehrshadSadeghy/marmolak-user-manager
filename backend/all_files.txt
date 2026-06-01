@@ -1,0 +1,1380 @@
+
+================================================================================
+FILE: __init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: all_files.txt
+================================================================================
+
+
+
+
+================================================================================
+FILE: .env
+================================================================================
+
+RAYA_TRADE_APP_PG_PASSWORD=abcd
+GOOGLE_API_KEY=AIzaSyBKM525CIFhMvQGpJKOt8eesQLHFa4oCE8
+HTTP_PROXY=socks5://127.0.0.1:10810
+HTTPS_PROXY=socks5://127.0.0.1:10810
+ALL_PROXY=socks5://127.0.0.1:10810
+
+
+
+================================================================================
+FILE: file_reader.py
+================================================================================
+
+from pathlib import Path
+
+START_PATH = Path(".")
+OUTPUT_FILE = "all_files.txt"
+
+ignored_dirs = {
+    ".git",
+    "venv",
+    "__pycache__",
+    "node_modules"
+}
+
+count = 0
+
+with open(OUTPUT_FILE, "w", encoding="utf-8") as output:
+
+    for path in START_PATH.rglob("*"):
+
+        if not path.is_file():
+            continue
+
+        if any(part in ignored_dirs for part in path.parts):
+            continue
+
+        print(f"READING: {path}")
+
+        try:
+            content = path.read_text(encoding="utf-8")
+
+            output.write(f"\n{'=' * 80}\n")
+            output.write(f"FILE: {path}\n")
+            output.write(f"{'=' * 80}\n\n")
+            output.write(content)
+            output.write("\n\n")
+
+            count += 1
+
+        except Exception as e:
+            print(f"ERROR: {path} -> {e}")
+
+print(f"\nDONE. {count} FILES WRITTEN.")
+print(f"OUTPUT: {OUTPUT_FILE}")
+
+
+================================================================================
+FILE: config/config.yaml
+================================================================================
+
+api:
+  debug: true
+  host: 0.0.0.0
+  port: 8080
+  title: Raya Trade
+  version: 0.1.0
+
+postgres:
+  host: 127.0.0.1
+  port: 5432
+  database: raya_trade_db
+  username: raya_user
+  pg_password: test1234
+
+ai_model_config:
+  name: "gemini-2.5-flash"
+  temperature: 0.1
+  timeout: 60
+  max_tokens: 10240
+  model_provider: "google_genai"
+  streaming: null
+
+
+
+================================================================================
+FILE: src/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/config.py
+================================================================================
+
+from pydantic import BaseModel, Field
+
+import yaml
+from pathlib import Path
+from pydantic_settings import SettingsConfigDict
+
+class APIConfig(BaseModel):
+    debug: bool
+    host: str
+    port: int
+    title: str
+    version: str
+
+class DatabaseConfig(BaseModel):
+    host: str
+    port: int
+    database: str
+    username: str
+    pg_password: str
+
+class AIModelConfig(BaseModel):
+    model: str = Field(alias="name")
+    temperature: float | None
+    timeout: int | None
+    max_tokens: int | None
+    model_provider: str | None
+    streaming: bool | None
+
+class Config(BaseModel):
+    model_config = SettingsConfigDict(
+        env_prefix="RAYA_TRADE_APP_",
+    )
+
+
+    api: APIConfig
+    postgres: DatabaseConfig
+    ai: AIModelConfig = Field(alias="ai_model_config")
+
+
+    @classmethod
+    def from_yaml(cls, environment: str):
+        path = Path(__file__).parent.parent.parent / "config" / f"{environment}.yaml"
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+
+        return cls(**data)
+
+
+
+================================================================================
+FILE: src/raya_trade_app/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/__main__.py
+================================================================================
+
+import asyncio
+import logging
+
+from raya_trade_app.container import AppContainer
+
+LOGGER = logging.getLogger(__name__)
+
+
+async def main() -> None:
+    container = AppContainer()
+    managers = container.get_managers()
+
+    try:
+        await asyncio.gather(*[manager.setup() for manager in managers])
+        await asyncio.gather(*[manager.run() for manager in managers])
+    except Exception as ex:
+        LOGGER.exception(ex)
+
+    finally:
+        await asyncio.gather(*[manager.teardown() for manager in managers])
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/container.py
+================================================================================
+
+import os
+from functools import lru_cache
+from typing import Any, Coroutine
+
+from raya_trade_app.ai_agent.agent.langchain import LangchainAgent
+from raya_trade_app.ai_agent.service import AIService
+from raya_trade_app.common.db.sqlalchemy_base import Base
+from raya_trade_app.config import Config, APIConfig, DatabaseConfig
+from raya_trade_app.core.db.postgres import Postgres
+from raya_trade_app.core.manager.ai_agent_manager import AIManager
+from raya_trade_app.core.manager.api_manager import APIManager
+from raya_trade_app.core.manager.base import Manager
+from raya_trade_app.core.manager.db_manager import PostgresManager
+
+from raya_trade_app.strategy.api.v1.router import router as strategy_router
+from raya_trade_app.ai_agent.api.v1.router import router as ai_router
+from raya_trade_app.strategy.repository.base import StrategyRepository
+from raya_trade_app.strategy.repository.sqlalchemy_repository import StrategyDBRepository
+from raya_trade_app.strategy.service import StrategyService
+
+singleton = lru_cache
+
+class AppContainer:
+
+    @singleton
+    def get_config(self) -> APIConfig:
+        environment = os.environ.get("RAYA_TRADE_ENVIRONMENT")
+        return Config.from_yaml(environment=environment)
+
+    @singleton
+    def get_api_manager(self) -> APIManager:
+        return APIManager(
+            api_config=self.get_config().api,
+            container=self,
+            routers=[
+                strategy_router,
+                ai_router,
+
+            ],
+        )
+
+    @singleton
+    def get_db_config(self) -> DatabaseConfig:
+        return self.get_config().postgres
+
+    @singleton
+    def get_postgres_provider(self) -> Postgres:
+        return Postgres(self.get_db_config())
+
+
+    @singleton
+    def get_postgres_manager(self) -> PostgresManager:
+        print("1")
+        return PostgresManager(
+            provider=self.get_postgres_provider(),
+            base = Base,
+            session_factory=self.get_pg_session,
+        )
+
+    @singleton
+    def get_managers(self) -> list[Manager]:
+        return [
+            self.get_api_manager(),
+            self.get_postgres_manager(),
+            self.get_ai_manager(),
+        ]
+
+    @singleton
+    def get_pg_session(self):
+        manager = self.get_postgres_manager()
+        print("2")
+        return manager.get_session()
+
+    @singleton
+    def get_strategy_repository(self) -> StrategyRepository:
+        session = next(self.get_pg_session())
+        return StrategyDBRepository(session=session)
+
+    @singleton
+    def get_strategy_service(self) -> StrategyService:
+        print("4")
+        repo =  self.get_strategy_repository()
+        return StrategyService(strategy_repository=repo)
+
+
+    async def get_ai_service(self) -> AIService:
+        agent = await self.get_ai_agent()
+        return AIService(agent=agent)
+
+
+    async def get_ai_agent(self) -> LangchainAgent:
+        return LangchainAgent(
+            model= await self.get_ai_manager().get_ai_model(),
+        )
+
+    @singleton
+    def get_ai_model_config(self,):
+        return self.get_config().ai
+
+    @singleton
+    def get_ai_manager(self) -> AIManager:
+        return AIManager(
+            model_config=self.get_ai_model_config(),
+        )
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/core/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/service.py
+================================================================================
+
+from uuid import UUID
+
+from raya_trade_app.strategy.db.strategy import Strategy
+from raya_trade_app.strategy.repository.base import StrategyRepository
+
+
+class StrategyService:
+    def __init__(self, strategy_repository: StrategyRepository):
+        self._strategy_repository = strategy_repository
+
+    async def get_strategies(self) -> list[Strategy]:
+        return await self._strategy_repository.get_strategies()
+
+    async def get_strategy(
+            self,
+            strategy_id: UUID
+    ):
+        strategy = await self._strategy_repository.get_strategy(strategy_id=strategy_id)
+        return strategy
+
+    async def create_strategy(self, strategy_data: Strategy) -> None:
+        await self._strategy_repository.set_strategy(strategy_data=strategy_data)
+        return None
+
+    async def update_strategy(self, strategy_data: Strategy) -> None:
+        await self._strategy_repository.put_strategy(strategy_data=strategy_data)
+        return None
+
+    async def delete_strategy(self, strategy_id: int) -> None:
+        await self._strategy_repository.delete_strategy(strategy_id=strategy_id)
+
+
+================================================================================
+FILE: src/raya_trade_app/common/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/domain.py
+================================================================================
+
+import uuid
+from uuid import UUID
+
+from langchain_core.messages import SystemMessage
+from pydantic import BaseModel, Field
+
+
+class AiData(BaseModel):
+    id: UUID = Field(default_factory=uuid.uuid4)
+    system_message: str
+    input_prompt: str
+    model_output: str | None
+    rate: float | None
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/service.py
+================================================================================
+
+from raya_trade_app.ai_agent.agent.base import BaseAgent
+from raya_trade_app.ai_agent.domain import AiData
+
+
+class AIService:
+    def __init__(self, agent: BaseAgent):
+        self._agent = agent
+
+    async def zero_shot_qa(
+            self,
+            data: AiData,
+    ):
+        return await self._agent.zero_shot_question_answering(
+            data=data,
+        )
+
+
+
+================================================================================
+FILE: src/raya_trade_app/core/manager/base.py
+================================================================================
+
+from abc import ABC, abstractmethod
+
+
+class Manager(ABC):
+    @abstractmethod
+    async def setup(self) -> None:
+        pass
+
+    @abstractmethod
+    async def run(self) -> None:
+        pass
+
+    @abstractmethod
+    async def teardown(self) -> None:
+        pass
+
+
+
+================================================================================
+FILE: src/raya_trade_app/core/manager/db_manager.py
+================================================================================
+
+from typing import Callable
+
+from sqlalchemy import Engine, func
+from sqlalchemy.orm import Session, DeclarativeBase
+
+from raya_trade_app.config import DatabaseConfig
+from raya_trade_app.core.db.base import BaseDatabase
+from raya_trade_app.core.manager.base import Manager
+
+
+class PostgresManager(Manager):
+    def __init__(
+        self,
+        provider: BaseDatabase,
+        base: type[DeclarativeBase],
+        session_factory: Callable,
+    ):
+        self._provider = provider
+        self._engine = None
+        self._session = session_factory
+        self._base = base
+
+    async def setup(self) -> None:
+        print("6")
+        url = self._provider.create_url()
+        self._engine = self._provider.create_engine(url)
+
+        self._base.metadata.create_all(bind=self._engine)
+        self._session = self._provider.setup_session(self._engine)
+        print("7")
+
+    async def run(self) -> None:
+        pass
+
+    async def teardown(self) -> None:
+        pass
+
+    def get_session(self, ):
+        db = self._session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+
+
+================================================================================
+FILE: src/raya_trade_app/core/manager/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/core/manager/api_manager.py
+================================================================================
+
+import logging
+from typing import TYPE_CHECKING
+
+import uvicorn
+from fastapi import APIRouter, FastAPI
+
+from raya_trade_app.config import APIConfig
+from raya_trade_app.core.manager.base import Manager
+
+if TYPE_CHECKING:
+    from raya_trade_app.container import AppContainer
+
+
+LOGGER = logging.getLogger(__name__)
+
+class APIManager(Manager):
+    def __init__(
+            self, api_config: APIConfig, container: "AppContainer", routers: list[APIRouter]
+    ) -> None:
+        self._config = api_config
+        self._container = container
+        self._routers = routers
+
+        self._app: FastAPI | None = None
+        self._uvicorn_server: uvicorn.Server | None = None
+
+    async def setup(self) -> None:
+        LOGGER.info("Setting up 'API Manager'")
+
+        self._app = FastAPI(
+            debug=self._config.debug,
+            title=self._config.title,
+            version=self._config.version,
+        )
+
+        for router in self._routers:
+            self._app.include_router(router)
+
+        self._app.state.container = self._container
+
+    async def run(self):
+        LOGGER.info("Running 'API Manager'")
+
+        if self._app is None:
+            raise ValueError("APIManager is not setup")
+
+        self._uvicorn_server = uvicorn.Server(
+            config=uvicorn.Config(
+                app=self._app,
+                host=self._config.host,
+                port=self._config.port,
+            )
+        )
+        await self._uvicorn_server.serve()
+
+    async def teardown(self) -> None:
+        LOGGER.info("Tearing down `APIManager`")
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/core/manager/ai_agent_manager.py
+================================================================================
+
+import os
+
+from dotenv import load_dotenv, find_dotenv
+from langchain.chat_models import init_chat_model
+
+from raya_trade_app.config import AIModelConfig
+from raya_trade_app.core.manager.base import Manager
+
+
+class AIManager(Manager):
+    def __init__(self, model_config: AIModelConfig):
+        self._model_config = model_config
+        self._model = None
+
+    async def setup(self) -> None:
+        env_file = find_dotenv(usecwd=True)
+        print(f"[DEBUG] .env found at: {env_file or 'NOT FOUND'}")
+
+        if env_file:
+            load_dotenv(env_file, override=True)
+
+        google_key = os.environ.get("GOOGLE_API_KEY")
+        print(f"[DEBUG] GOOGLE_API_KEY loaded: {bool(google_key)}")
+
+        if not google_key:
+            raise RuntimeError("GOOGLE_API_KEY is not set in environment or .env")
+
+        model_kwargs = self._model_config.model_dump(exclude_none=True)
+        self._model = init_chat_model(**model_kwargs)
+
+    async def run(self) -> None:
+        pass
+
+    async def teardown(self) -> None:
+        pass
+
+    async def get_ai_model(self):
+        return self._model
+
+
+================================================================================
+FILE: src/raya_trade_app/core/db/base.py
+================================================================================
+
+from abc import ABC, abstractmethod
+
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
+
+
+class BaseDatabase(ABC):
+    @abstractmethod
+    def create_url(self) -> dict:
+        pass
+
+    @abstractmethod
+    def create_engine(self, url) -> Engine:
+        pass
+
+    @abstractmethod
+    def setup_session(self, engine:Engine) -> Session:
+        pass
+
+
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/core/db/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/core/db/postgres.py
+================================================================================
+
+from raya_trade_app.config import DatabaseConfig
+from raya_trade_app.core.db.base import BaseDatabase
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import sessionmaker, Session
+
+class Postgres(BaseDatabase):
+    def __init__(self, config:DatabaseConfig) -> None:
+        self._config = config
+        self._session_local = None
+        self._url = None
+
+    def create_url(self) -> str:
+        return f"postgresql://{self._config.username}:{self._config.pg_password}@{self._config.host}:{self._config.port}/{self._config.database}"
+
+    def create_engine(self, url: str) -> Engine:
+
+        self._url = url
+        print(self._url)
+        return create_engine(url=url)
+
+    def setup_session(self, engine: Engine):
+        self._session_local = sessionmaker(
+            autocommit=False,
+            autoflush=False,
+            bind=engine
+        )
+        return self._session_local
+
+    def get_session(self, engine: Engine) -> Session:
+        if not self._session_local:
+            self.setup_session(engine)
+
+        return self._session_local()
+
+    def close_session(self):
+        if self._engine:
+            self._engine.dispose()
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/db/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/db/strategy.py
+================================================================================
+
+import datetime
+from typing import Optional, Any
+
+from pydantic import BaseModel
+from pydantic.types import Json
+from uuid import UUID
+
+class Strategy(BaseModel):
+    id: UUID = None
+    name: str
+    data: dict[str, Any]
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/repository/base.py
+================================================================================
+
+from abc import abstractmethod, ABC
+from uuid import UUID
+
+from raya_trade_app.strategy.db.strategy import Strategy
+
+
+class StrategyRepository(ABC):
+    @abstractmethod
+    async def set_strategy(self, strategy_data: Strategy) -> None:
+        pass
+
+    @abstractmethod
+    async def put_strategy(self, strategy_data: Strategy) -> None:
+        pass
+
+    @abstractmethod
+    async def get_strategies(self) -> list[Strategy]:
+        pass
+
+    @abstractmethod
+    async def get_strategy(self, strategy_id: UUID) -> Strategy:
+        pass
+
+    @abstractmethod
+    async def delete_strategy(self, strategy_id:int) -> None:
+        pass
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/repository/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/repository/sqlalchemy_repository.py
+================================================================================
+
+from typing import List, Optional
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from raya_trade_app.strategy.db.pg_model.strategy import StrategyORM
+from raya_trade_app.strategy.db.strategy import Strategy
+from raya_trade_app.strategy.repository.base import StrategyRepository
+
+
+class StrategyDBRepository(StrategyRepository):
+    def __init__(self, session):
+        self._session = session
+
+    async def put_strategy(self, strategy_data: Strategy) -> None:
+        obj = (
+            self._session.query(StrategyORM)
+            .filter(StrategyORM.id == strategy_data.id)
+            .first()
+        )
+        if not obj:
+            return None
+
+        obj.name = strategy_data.name
+        obj.data = strategy_data.data
+
+        self._session.add(obj)
+        self._session.commit()
+        self._session.refresh(obj)
+        return None
+
+    async def set_strategy(self, strategy_data: Strategy) -> None:
+        obj = StrategyORM(
+            name=strategy_data.name,
+            data=strategy_data.data,
+        )
+        self._session.add(obj)
+        self._session.commit()
+        self._session.refresh(obj)
+
+        return None
+
+    async def delete_strategy(self, strategy_id: int) -> None:
+        obj = self._session.query(StrategyORM).filter(StrategyORM.id == strategy_id).first()
+        if not obj:
+            return None
+
+        self._session.delete(obj)
+        self._session.commit()
+        self._session.refresh(obj)
+
+        return None
+
+    async def get_strategy(self, strategy_id: UUID) -> Optional[Strategy]:
+        obj = self._session.query(StrategyORM).where(StrategyORM.id == strategy_id).first()
+        if not obj:
+            return None
+        return Strategy.from_orm(obj)
+
+    async def get_strategies(self) -> List[Strategy]:
+        rows = self._session.query(StrategyORM).all()
+        return [Strategy.from_orm(r) for r in rows]
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/api/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/db/pg_model/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/db/pg_model/strategy.py
+================================================================================
+
+import uuid
+from uuid import UUID
+
+from sqlalchemy import Column, String, DateTime, func
+from sqlalchemy.dialects.postgresql import JSONB
+from raya_trade_app.common.db.sqlalchemy_base import Base
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
+
+
+class StrategyORM(Base):
+    __tablename__ = "strategies"
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        index=True,
+        default=uuid.uuid4
+    )
+
+    name = Column(String, nullable=False)
+
+    data = Column(JSONB, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/api/v1/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/api/v1/router.py
+================================================================================
+
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.params import Path
+
+from raya_trade_app.strategy.api.v1.dependency import get_strategy_service
+from raya_trade_app.strategy.api.v1.dto import StrategyGetResponseDTO, StrategyUpsetResponseDTO, StrategyRowDTO, \
+    StrategyUpdateDTO
+from raya_trade_app.strategy.db.strategy import Strategy
+from raya_trade_app.strategy.service import StrategyService
+
+router = APIRouter(
+    prefix="/api/v1/strategy",
+    tags=["strategy"],
+)
+
+@router.get("/all")
+async def get_strategies(
+        strategy_service: Annotated[StrategyService, Depends(get_strategy_service)],
+) -> StrategyGetResponseDTO:
+    strategies = await strategy_service.get_strategies()
+    return StrategyGetResponseDTO(
+    strategies=[
+        strategy for strategy in strategies
+    ]
+    )
+
+@router.get("/{strategy_id}")
+async def get_strategy(
+        strategy_id: Annotated[UUID, Path()],
+        strategy_service: Annotated[StrategyService, Depends(get_strategy_service)]
+) -> StrategyGetResponseDTO:
+    strategy = await strategy_service.get_strategy(strategy_id=strategy_id)
+
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    return StrategyGetResponseDTO(
+        strategies=[
+            strategy
+        ]
+        )
+
+
+
+
+
+@router.post("/create", response_model=StrategyUpsetResponseDTO)
+async def create_strategy(
+        strategy_service: Annotated[StrategyService, Depends(get_strategy_service)],
+        strategy_data: StrategyRowDTO,
+) -> StrategyUpsetResponseDTO:
+    print("1")
+    await strategy_service.create_strategy(
+        strategy_data=Strategy(
+            name=strategy_data.name,
+            data=strategy_data.data,
+        )
+    )
+    print("2")
+    return StrategyUpsetResponseDTO(
+        status="success",
+    )
+
+@router.put("/update")
+async def update_strategy(
+        strategy_service: Annotated[StrategyService, Depends(get_strategy_service)],
+        strategy_data: StrategyUpdateDTO,
+) -> StrategyUpsetResponseDTO:
+    await strategy_service.update_strategy(
+        strategy_data=Strategy(
+            id=strategy_data.id,
+            name=strategy_data.name,
+            data=strategy_data.data,
+        )
+    )
+    return StrategyUpsetResponseDTO(
+        status="success",
+    )
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/api/v1/dto.py
+================================================================================
+
+
+
+import json
+from datetime import datetime
+from typing import Any, Optional, Dict
+from uuid import UUID
+
+from pydantic import BaseModel, field_validator
+
+from raya_trade_app.strategy.db.strategy import Strategy
+
+
+def _parse_nested_json(data: Dict[str, Any]) -> Dict[str, Any]:
+    result = {}
+    for key, value in data.items():
+        if isinstance(value, str):
+            try:
+                result[key] = json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                result[key] = value
+        else:
+            result[key] = value
+    return result
+
+
+class BaseStrategyDTO(BaseModel):
+    data: Dict[str, Any]
+
+    @field_validator("data", mode="before")
+    @classmethod
+    def parse_nested_json_strings(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            return _parse_nested_json(v)
+        return v
+
+
+class StrategyGetResponseDTO(BaseModel):
+    strategies: list[Strategy]
+
+class StrategyUpsetResponseDTO(BaseModel):
+    status: str
+
+
+class StrategyRowDTO(BaseStrategyDTO):
+    name: str
+
+
+class StrategyResponseDTO(BaseModel):
+    id: UUID
+    name: str
+    data: Dict[str, Any]
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+
+class StrategyUpdateDTO(BaseStrategyDTO):
+    id: UUID
+    name: str
+
+
+
+================================================================================
+FILE: src/raya_trade_app/strategy/api/v1/dependency.py
+================================================================================
+
+from fastapi import Request
+
+from raya_trade_app.strategy.service import StrategyService
+
+
+async def get_strategy_service(
+    request: Request,
+) -> StrategyService:
+    container = request.app.state.container
+    return await container.get_strategy_service()
+
+
+================================================================================
+FILE: src/raya_trade_app/common/db/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/common/db/sqlalchemy_base.py
+================================================================================
+
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/api/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/agent/base.py
+================================================================================
+
+from abc import ABC, abstractmethod
+
+from langchain.chat_models import init_chat_model
+from langchain_core.messages import SystemMessage
+
+from raya_trade_app.ai_agent.domain import AiData
+from raya_trade_app.strategy.db.strategy import Strategy
+
+
+
+
+class BaseAgent(ABC):
+    @abstractmethod
+    async def   zero_shot_question_answering(self, data: AiData) -> Strategy:
+        pass
+
+    @abstractmethod
+    async def few_shot_question_answering(self, data: Strategy, example: AiData, ) -> Strategy:
+        pass
+
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/agent/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/agent/langchain.py
+================================================================================
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from raya_trade_app.ai_agent.agent.base import BaseAgent
+from raya_trade_app.ai_agent.domain import AiData
+
+
+class LangchainAgent(BaseAgent):
+    def __init__(self, model):
+        self._model = model
+
+    async def zero_shot_question_answering(self, data: AiData) -> AiData:
+        system_msg = SystemMessage(content=data.system_message)
+        human_msg = HumanMessage(content=data.input_prompt)
+
+        response = await self._model.ainvoke([system_msg, human_msg])
+
+        return AiData(
+            id=data.id,
+            system_message=data.system_message,
+            input_prompt=data.input_prompt,
+            model_output=response.content,
+            rate=None,
+        )
+
+    async def few_shot_question_answering(self, data, example: AiData):
+        pass
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/api/v1/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/api/v1/router.py
+================================================================================
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends
+
+from raya_trade_app.ai_agent.api.v1.dependency import get_ai_service
+from raya_trade_app.ai_agent.api.v1.dto import StrategyGeneratorDTO, AIDataDTO
+from raya_trade_app.ai_agent.domain import AiData
+from raya_trade_app.ai_agent.service import AIService
+
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["ai"],
+)
+
+
+@router.post("/strategy/generator")
+async def strategy_generator(
+    body: Annotated[StrategyGeneratorDTO, Body()],
+    ai_agent_service: Annotated[AIService, Depends(get_ai_service)],
+) -> AIDataDTO:
+    data = await ai_agent_service.zero_shot_qa(
+        AiData(
+            system_message="""You are a professional Forex trading strategy parser. Your sole purpose is to extract trading strategy information from user input and return it as STRICTLY VALID JSON matching the schema below.
+
+# CRITICAL RULES — DO NOT VIOLATE:
+1. Your output MUST be a single valid JSON object — nothing else.
+2. NEVER include markdown code blocks (no ```json or ```), explanations, comments, or any text outside the JSON.
+3. NEVER use prose, narrative descriptions, or paragraphs as values. Every value must be either a string, number, boolean, array, or null.
+4. If a field is not mentioned in the user's input, set its value to null. Do NOT invent, assume, or guess values.
+5. All keys MUST exactly match the schema below — no renaming, no additions, no removals.
+6. Field values can be in Persian or English depending on user input — preserve the language used.
+7. Numeric values (percentages, risk numbers, R/R ratios) must be numbers, not strings. Example: 1.5 not "1.5".
+8. Boolean values must be true/false, not "yes"/"no".
+
+# OUTPUT JSON SCHEMA:
+{
+  "expert_type": {
+    "analysis_type": null,
+    "trading_style": null
+  },
+  "timeframe_and_session": {
+    "analysis_timeframe": null,
+    "entry_timeframe": null,
+    "trading_session": null
+  },
+  "market_and_instrument": {
+    "market": null,
+    "trading_platform": null,
+    "watchlist_symbols": []
+  },
+  "strategy": {
+    "trading_style_type": null,
+    "indicators_used": [],
+    "indicator_settings": null,
+    "analytical_strategy": null,
+    "entry_rules": null,
+    "exit_rules": null,
+    "stop_loss_placement": null,
+    "take_profit_placement": null
+  },
+  "risk_and_money_management": {
+    "risk_per_trade_percent": null,
+    "fixed_rr_ratio": null,
+    "daily_stop_loss": null,
+    "weekly_stop_loss": null,
+    "monthly_stop_loss": null,
+    "yearly_stop_loss": null,
+    "risk_free_conditions": null,
+    "trailing_stop_conditions": null,
+    "max_concurrent_trades": null,
+    "partial_close_conditions": null
+  },
+  "filters": {
+    "spread_filter": null,
+    "specific_hours_filter": null,
+    "weekday_filter": null,
+    "news_filter": null
+  },
+  "fundamental": {
+    "news_sources": []
+  },
+  "expert_execution": {
+    "magic_number": null,
+    "trade_comment": null,
+    "slippage": null
+  },
+  "optimization": {
+    "input_parameters": []
+  },
+  "miscellaneous": {
+    "signal_on_closed_candle": null,
+    "entry_type": null,
+    "signal_validity_candles": null,
+    "terminology_definitions": null,
+    "exit_on_opposite_signal": null,
+    "session_end_position_handling": null
+  }
+}
+
+# FIELD-LEVEL GUIDANCE:
+- "analysis_type": one of "technical" | "fundamental" | "hybrid" | null
+- "trading_style": one of "scalper" | "day_trader" | "long_trader" | null
+- "trading_style_type": one of "price_action" | "smart_money" | "elliott" | "ict" | "supply_demand" | other | null
+- "watchlist_symbols": array of strings (e.g., ["EURUSD", "XAUUSD"])
+- "indicators_used": array of strings (e.g., ["RSI", "MACD", "EMA200"])
+- "input_parameters": array of objects, each {"name": "...", "type": "...", "default": ...}
+- "signal_on_closed_candle": true if signal must wait for candle close, false if tick-based, null if not specified
+- "entry_type": "market" | "pending" | null
+- "exit_on_opposite_signal": true | false | null
+- "session_end_position_handling": "close" | "keep" | "trail" | null
+- All "*_stop_loss" fields: numbers representing percent or amount; if user says "10 درصد روزانه" → 10
+- "fixed_rr_ratio": number, e.g., 2 for 1:2 R/R, or null if variable
+
+# EXAMPLE INPUT:
+"یک اکسپرت اسکلپر تکنیکال برای EURUSD روی تایم فریم M5 با RSI و EMA. ریسک هر معامله 1% و R/R ثابت 2."
+
+# EXAMPLE OUTPUT (exact format you must produce):
+{
+  "expert_type": {
+    "analysis_type": "technical",
+    "trading_style": "scalper"
+  },
+  "timeframe_and_session": {
+    "analysis_timeframe": null,
+    "entry_timeframe": "M5",
+    "trading_session": null
+  },
+  "market_and_instrument": {
+    "market": null,
+    "trading_platform": null,
+    "watchlist_symbols": ["EURUSD"]
+  },
+  "strategy": {
+    "trading_style_type": null,
+    "indicators_used": ["RSI", "EMA"],
+    "indicator_settings": null,
+    "analytical_strategy": null,
+    "entry_rules": null,
+    "exit_rules": null,
+    "stop_loss_placement": null,
+    "take_profit_placement": null
+  },
+  "risk_and_money_management": {
+    "risk_per_trade_percent": 1,
+    "fixed_rr_ratio": 2,
+    "daily_stop_loss": null,
+    "weekly_stop_loss": null,
+    "monthly_stop_loss": null,
+    "yearly_stop_loss": null,
+    "risk_free_conditions": null,
+    "trailing_stop_conditions": null,
+    "max_concurrent_trades": null,
+    "partial_close_conditions": null
+  },
+  "filters": {
+    "spread_filter": null,
+    "specific_hours_filter": null,
+    "weekday_filter": null,
+    "news_filter": null
+  },
+  "fundamental": {
+    "news_sources": []
+  },
+  "expert_execution": {
+    "magic_number": null,
+    "trade_comment": null,
+    "slippage": null
+  },
+  "optimization": {
+    "input_parameters": []
+  },
+  "miscellaneous": {
+    "signal_on_closed_candle": null,
+    "entry_type": null,
+    "signal_validity_candles": null,
+    "terminology_definitions": null,
+    "exit_on_opposite_signal": null,
+    "session_end_position_handling": null
+  }
+}
+
+# REMEMBER:
+- Output ONLY the JSON object.
+- NO ```json fences.
+- NO explanations before or after.
+- ALL keys present, even if value is null or [].
+- If you produce anything other than valid JSON, you have failed your task.
+IMPORTANT: just send the json (key-value) data and dont explain or send metadata!
+""",
+            input_prompt=body.input_prompt,
+            model_output=None,
+            rate=None,
+        )
+    )
+    return AIDataDTO(data=data)
+
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/api/v1/dto.py
+================================================================================
+
+from pydantic import BaseModel
+
+from raya_trade_app.ai_agent.domain import AiData
+
+
+class StrategyGeneratorDTO(BaseModel):
+    input_prompt: str
+
+
+class AIDataDTO(BaseModel):
+    data: AiData
+
+
+
+================================================================================
+FILE: src/raya_trade_app/ai_agent/api/v1/dependency.py
+================================================================================
+
+from fastapi import Request
+
+from raya_trade_app.ai_agent.service import AIService
+
+async def get_ai_service(
+        request: Request,
+) -> AIService:
+    container = request.app.state.container
+    return await container.get_ai_service()
+
+
