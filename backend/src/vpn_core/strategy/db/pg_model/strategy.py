@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import Column, String, DateTime, func
 from sqlalchemy.dialects.postgresql import JSONB
-from raya_trade_app.common.db.sqlalchemy_base import Base
+from vpn_core.common.db.sqlalchemy_base import Base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 

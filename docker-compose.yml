@@ -1,0 +1,52 @@
+# Postgres defaults match backend/config/docker.yaml + config.py env overrides.
+# Copy .env.example to .env and adjust before first start.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-user_manager_db}
+      POSTGRES_USER: ${POSTGRES_USER:-user_manager_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_postgres}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-user_manager_user} -d ${POSTGRES_DB:-user_manager_db}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      RAYA_TRADE_ENVIRONMENT: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-user_manager_db}
+      POSTGRES_USER: ${POSTGRES_USER:-user_manager_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_postgres}
+      SUBSCRIPTION_BASE_URL: ${SUBSCRIPTION_BASE_URL:-http://localhost:8080}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}
+      BOT_API_KEY: ${BOT_API_KEY:-changeme-bot-api-key}
+      PAYMENT_INSTRUCTIONS: ${PAYMENT_INSTRUCTIONS:-}
+      ADMIN_CHAT_IDS: ${ADMIN_CHAT_IDS:-}
+      SUPER_ADMIN_CHAT_IDS: ${SUPER_ADMIN_CHAT_IDS:-}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

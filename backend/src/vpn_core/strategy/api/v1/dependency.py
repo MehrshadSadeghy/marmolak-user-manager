@@ -1,6 +1,6 @@
 from fastapi import Request
 
-from raya_trade_app.strategy.service import StrategyService
+from vpn_core.strategy.service import StrategyService
 
 
 def get_strategy_service(

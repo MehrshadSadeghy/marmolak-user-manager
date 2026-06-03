@@ -4,11 +4,11 @@ from typing import TYPE_CHECKING
 import uvicorn
 from fastapi import APIRouter, FastAPI
 
-from raya_trade_app.config import APIConfig
-from raya_trade_app.core.manager.base import Manager
+from vpn_core.config import APIConfig
+from vpn_core.core.manager.base import Manager
 
 if TYPE_CHECKING:
-    from raya_trade_app.container import AppContainer
+    from vpn_core.container import AppContainer
 
 
 LOGGER = logging.getLogger(__name__)

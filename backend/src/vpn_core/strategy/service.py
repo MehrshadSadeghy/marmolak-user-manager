@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from raya_trade_app.strategy.db.strategy import Strategy
-from raya_trade_app.strategy.repository.base import StrategyRepository
+from vpn_core.strategy.db.strategy import Strategy
+from vpn_core.strategy.repository.base import StrategyRepository
 
 
 class StrategyService:

@@ -1,5 +1,5 @@
-from raya_trade_app.config import DatabaseConfig
-from raya_trade_app.core.db.base import BaseDatabase
+from vpn_core.config import DatabaseConfig
+from vpn_core.core.db.base import BaseDatabase
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -16,7 +16,6 @@ class Postgres(BaseDatabase):
     def create_engine(self, url: str) -> Engine:
 
         self._url = url
-        print(self._url)
         return create_engine(url=url)
 
     def setup_session(self, engine: Engine):

@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, field_validator
 
-from raya_trade_app.strategy.db.strategy import Strategy
+from vpn_core.strategy.db.strategy import Strategy
 
 
 def _parse_nested_json(data: Dict[str, Any]) -> Dict[str, Any]:

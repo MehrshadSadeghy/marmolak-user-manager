@@ -1,52 +1,53 @@
 import os
 from functools import lru_cache
-from typing import Any, Coroutine
 
-from raya_trade_app.ai_agent.agent.langchain import LangchainAgent
-from raya_trade_app.ai_agent.service import AIService
-from raya_trade_app.common.db.sqlalchemy_base import Base
-from raya_trade_app.config import Config, APIConfig, DatabaseConfig
-from raya_trade_app.core.db.postgres import Postgres
-from raya_trade_app.core.manager.ai_agent_manager import AIManager
-from raya_trade_app.core.manager.api_manager import APIManager
-from raya_trade_app.core.manager.base import Manager
-from raya_trade_app.core.manager.db_manager import PostgresManager
-
-from raya_trade_app.strategy.api.v1.router import router as strategy_router
-from raya_trade_app.ai_agent.api.v1.router import router as ai_router
-from raya_trade_app.strategy.repository.base import StrategyRepository
-from raya_trade_app.strategy.repository.sqlalchemy_repository import StrategyDBRepository
-from raya_trade_app.strategy.service import StrategyService
-
-import vpn_core.subscription_domain.db_model  # noqa: F401
-import vpn_core.server_management_domain.db_model  # noqa: F401
-import vpn_core.traffic_monitoring_domain.db_model  # noqa: F401
-from vpn_core.subscription_domain.api.v1.router import router as subscription_router
-from vpn_core.subscription_domain.repository.base import SubscriptionRepository
-from vpn_core.subscription_domain.repository.sqlalchemy_repository import SubscriptionDBRepository
-from vpn_core.subscription_domain.service import SubscriptionService
+from vpn_core.common.db.sqlalchemy_base import Base
+from vpn_core.config import APIConfig, Config, DatabaseConfig
+from vpn_core.core.db.postgres import Postgres
+from vpn_core.core.manager.api_manager import APIManager
+from vpn_core.core.manager.base import Manager
+from vpn_core.core.manager.db_manager import PostgresManager
 from vpn_core.server_management_domain.api.v1.router import router as server_router
 from vpn_core.server_management_domain.repository.base import ServerRepository
-from vpn_core.server_management_domain.repository.sqlalchemy_repository import ServerDBRepository
+from vpn_core.server_management_domain.repository.sqlalchemy_repository import (
+    ServerDBRepository,
+)
 from vpn_core.server_management_domain.service import ServerService
+from vpn_core.strategy.api.v1.router import router as strategy_router
+from vpn_core.strategy.repository.base import StrategyRepository
+from vpn_core.strategy.repository.sqlalchemy_repository import StrategyDBRepository
+from vpn_core.strategy.service import StrategyService
+from vpn_core.subscription_domain.api.v1.router import router as subscription_router
+from vpn_core.subscription_domain.repository.base import SubscriptionRepository
+from vpn_core.subscription_domain.repository.sqlalchemy_repository import (
+    SubscriptionDBRepository,
+)
+from vpn_core.subscription_domain.service import SubscriptionService
+
+import vpn_core.server_management_domain.db_model  # noqa: F401
+import vpn_core.subscription_domain.db_model  # noqa: F401
+import vpn_core.traffic_monitoring_domain.db_model  # noqa: F401
 
 singleton = lru_cache
 
+
 class AppContainer:
+    @singleton
+    def get_config(self) -> Config:
+        environment = os.environ.get("RAYA_TRADE_ENVIRONMENT", "config")
+        return Config.from_yaml(environment=environment)
 
     @singleton
-    def get_config(self) -> APIConfig:
-        environment = os.environ.get("RAYA_TRADE_ENVIRONMENT")
-        return Config.from_yaml(environment=environment)
+    def get_api_config(self) -> APIConfig:
+        return self.get_config().api
 
     @singleton
     def get_api_manager(self) -> APIManager:
         return APIManager(
-            api_config=self.get_config().api,
+            api_config=self.get_api_config(),
             container=self,
             routers=[
                 strategy_router,
-                ai_router,
                 subscription_router,
                 server_router,
             ],
@@ -60,13 +61,11 @@ class AppContainer:
     def get_postgres_provider(self) -> Postgres:
         return Postgres(self.get_db_config())
 
-
     @singleton
     def get_postgres_manager(self) -> PostgresManager:
-        print("1")
         return PostgresManager(
             provider=self.get_postgres_provider(),
-            base = Base,
+            base=Base,
             session_factory=self.get_pg_session,
         )
 
@@ -75,13 +74,11 @@ class AppContainer:
         return [
             self.get_api_manager(),
             self.get_postgres_manager(),
-            self.get_ai_manager(),
         ]
 
     @singleton
     def get_pg_session(self):
         manager = self.get_postgres_manager()
-        print("2")
         return manager.get_session()
 
     @singleton
@@ -91,8 +88,7 @@ class AppContainer:
 
     @singleton
     def get_strategy_service(self) -> StrategyService:
-        print("4")
-        repo =  self.get_strategy_repository()
+        repo = self.get_strategy_repository()
         return StrategyService(strategy_repository=repo)
 
     @singleton
@@ -112,24 +108,3 @@ class AppContainer:
     @singleton
     def get_server_service(self) -> ServerService:
         return ServerService(repository=self.get_server_repository())
-
-    async def get_ai_service(self) -> AIService:
-        agent = await self.get_ai_agent()
-        return AIService(agent=agent)
-
-
-    async def get_ai_agent(self) -> LangchainAgent:
-        return LangchainAgent(
-            model= await self.get_ai_manager().get_ai_model(),
-        )
-
-    @singleton
-    def get_ai_model_config(self,):
-        return self.get_config().ai
-
-    @singleton
-    def get_ai_manager(self) -> AIManager:
-        return AIManager(
-            model_config=self.get_ai_model_config(),
-        )
-

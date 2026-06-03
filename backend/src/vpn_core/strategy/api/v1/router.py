@@ -6,15 +6,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.params import Path
 
-from raya_trade_app.strategy.api.v1.dependency import get_strategy_service
-from raya_trade_app.strategy.api.v1.dto import (
+from vpn_core.strategy.api.v1.dependency import get_strategy_service
+from vpn_core.strategy.api.v1.dto import (
     StrategyGetResponseDTO,
     StrategyUpsetResponseDTO,
     StrategyRowDTO,
     StrategyUpdateDTO,
 )
-from raya_trade_app.strategy.db.strategy import Strategy
-from raya_trade_app.strategy.service import StrategyService
+from vpn_core.strategy.db.strategy import Strategy
+from vpn_core.strategy.service import StrategyService
 
 router = APIRouter(
     prefix="/api/v1/strategy",

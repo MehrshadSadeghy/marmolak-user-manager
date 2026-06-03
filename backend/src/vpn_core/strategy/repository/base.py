@@ -1,7 +1,7 @@
 from abc import abstractmethod, ABC
 from uuid import UUID
 
-from raya_trade_app.strategy.db.strategy import Strategy
+from vpn_core.strategy.db.strategy import Strategy
 
 
 class StrategyRepository(ABC):
