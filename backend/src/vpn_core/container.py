@@ -7,6 +7,17 @@ from vpn_core.core.db.postgres import Postgres
 from vpn_core.core.manager.api_manager import APIManager
 from vpn_core.core.manager.base import Manager
 from vpn_core.core.manager.db_manager import PostgresManager
+from vpn_core.openvpn_sync.api.v1.router import router as openvpn_router
+from vpn_core.openvpn_sync.repository.base import (
+    OpenVpnCredentialRepository,
+    OpenVpnTrafficRepository,
+)
+from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
+    OpenVpnCredentialDBRepository,
+    OpenVpnTrafficDBRepository,
+)
+from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
+from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTrafficService
 from vpn_core.server_management_domain.api.v1.router import router as server_router
 from vpn_core.server_management_domain.repository.base import ServerRepository
 from vpn_core.server_management_domain.repository.sqlalchemy_repository import (
@@ -24,6 +35,7 @@ from vpn_core.subscription_domain.repository.sqlalchemy_repository import (
 )
 from vpn_core.subscription_domain.service import SubscriptionService
 
+import vpn_core.openvpn_sync.db_model  # noqa: F401
 import vpn_core.server_management_domain.db_model  # noqa: F401
 import vpn_core.subscription_domain.db_model  # noqa: F401
 import vpn_core.traffic_monitoring_domain.db_model  # noqa: F401
@@ -50,6 +62,7 @@ class AppContainer:
                 strategy_router,
                 subscription_router,
                 server_router,
+                openvpn_router,
             ],
         )
 
@@ -108,3 +121,29 @@ class AppContainer:
     @singleton
     def get_server_service(self) -> ServerService:
         return ServerService(repository=self.get_server_repository())
+
+    @singleton
+    def get_openvpn_credential_repository(self) -> OpenVpnCredentialRepository:
+        session = next(self.get_pg_session())
+        return OpenVpnCredentialDBRepository(session=session)
+
+    @singleton
+    def get_openvpn_traffic_repository(self) -> OpenVpnTrafficRepository:
+        session = next(self.get_pg_session())
+        return OpenVpnTrafficDBRepository(session=session)
+
+    @singleton
+    def get_openvpn_provisioning_service(self) -> OpenVpnProvisioningService:
+        return OpenVpnProvisioningService(
+            server_service=self.get_server_service(),
+            subscription_repository=self.get_subscription_repository(),
+            credential_repository=self.get_openvpn_credential_repository(),
+        )
+
+    @singleton
+    def get_openvpn_traffic_service(self) -> OpenVpnTrafficService:
+        return OpenVpnTrafficService(
+            traffic_repository=self.get_openvpn_traffic_repository(),
+            subscription_repository=self.get_subscription_repository(),
+            provisioning_service=self.get_openvpn_provisioning_service(),
+        )

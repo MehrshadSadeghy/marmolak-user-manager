@@ -38,11 +38,13 @@ async def list_servers(
     country_code: Annotated[str | None, Query()] = None,
     is_active: Annotated[bool | None, Query()] = None,
     status: Annotated[ServerStatus | None, Query()] = None,
+    openvpn_enabled: Annotated[bool | None, Query()] = None,
 ) -> ServerListResponseDTO:
     query = ListServersQueryDTO(
         country_code=country_code,
         is_active=is_active,
         status=status,
+        openvpn_enabled=openvpn_enabled,
     ).to_domain()
     servers = await service.list_servers(query)
     return ServerListResponseDTO(servers=servers)

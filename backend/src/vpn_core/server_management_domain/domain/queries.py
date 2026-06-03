@@ -11,3 +11,5 @@ class ListServersQuery(BaseModel):
     country_code: str | None = None
     is_active: bool | None = None
     status: ServerStatus | None = None
+    openvpn_enabled: bool | None = None
+    openvpn_enabled: bool | None = None

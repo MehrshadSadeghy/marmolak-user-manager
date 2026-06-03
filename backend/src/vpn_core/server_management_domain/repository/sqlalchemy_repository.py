@@ -39,6 +39,8 @@ class ServerDBRepository(ServerRepository):
             db_query = db_query.filter(ServerORM.is_active == query.is_active)
         if query.status is not None:
             db_query = db_query.filter(ServerORM.status == query.status)
+        if query.openvpn_enabled is not None:
+            db_query = db_query.filter(ServerORM.openvpn_enabled == query.openvpn_enabled)
 
         rows = db_query.order_by(ServerORM.country_code, ServerORM.name).all()
         return [server_orm_to_domain(row) for row in rows]

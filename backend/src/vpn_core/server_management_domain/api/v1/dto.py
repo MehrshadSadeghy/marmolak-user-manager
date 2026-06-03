@@ -7,6 +7,7 @@ from vpn_core.server_management_domain.domain.commands import (
 )
 from vpn_core.server_management_domain.domain.connection_info import ConnectionInfo
 from vpn_core.server_management_domain.domain.queries import GetServerQuery, ListServersQuery
+from vpn_core.server_management_domain.domain.openvpn_settings import OpenVpnSettings
 from vpn_core.server_management_domain.domain.resource_monitoring import ResourceMonitoring
 from vpn_core.server_management_domain.domain.server import Server, ServerStatus
 
@@ -34,6 +35,23 @@ class ServerCapacityDTO(BaseModel):
             max_users=self.max_users,
             current_users=self.current_users,
             max_bandwidth_mbps=self.max_bandwidth_mbps,
+        )
+
+
+class OpenVpnSettingsDTO(BaseModel):
+    enabled: bool = False
+    node_api_secret: str | None = Field(default=None, max_length=256)
+    vpn_host: str | None = Field(default=None, max_length=255)
+    vpn_port: int = Field(default=1194, ge=1, le=65535)
+    vpn_proto: str = Field(default="udp", max_length=16)
+
+    def to_domain(self) -> OpenVpnSettings:
+        return OpenVpnSettings(
+            enabled=self.enabled,
+            node_api_secret=self.node_api_secret,
+            vpn_host=self.vpn_host,
+            vpn_port=self.vpn_port,
+            vpn_proto=self.vpn_proto,
         )
 
 
@@ -69,6 +87,7 @@ class CreateServerDTO(BaseModel):
     monitoring: ResourceMonitoringDTO = Field(default_factory=ResourceMonitoringDTO)
 
     xray_inbound_tag: str | None = Field(default=None, max_length=64)
+    openvpn: OpenVpnSettingsDTO = Field(default_factory=OpenVpnSettingsDTO)
     status: ServerStatus = ServerStatus.offline
     is_active: bool = True
     notes: str | None = Field(default=None, max_length=1024)
@@ -86,6 +105,7 @@ class CreateServerDTO(BaseModel):
             capacity=self.capacity.to_domain(),
             monitoring=self.monitoring.to_domain(),
             xray_inbound_tag=self.xray_inbound_tag,
+            openvpn=self.openvpn.to_domain(),
             status=self.status,
             is_active=self.is_active,
             notes=self.notes,
@@ -107,6 +127,7 @@ class UpdateServerDTO(BaseModel):
     monitoring: ResourceMonitoringDTO
 
     xray_inbound_tag: str | None = Field(default=None, max_length=64)
+    openvpn: OpenVpnSettingsDTO = Field(default_factory=OpenVpnSettingsDTO)
     status: ServerStatus
     is_active: bool = True
     notes: str | None = Field(default=None, max_length=1024)
@@ -125,6 +146,7 @@ class UpdateServerDTO(BaseModel):
             capacity=self.capacity.to_domain(),
             monitoring=self.monitoring.to_domain(),
             xray_inbound_tag=self.xray_inbound_tag,
+            openvpn=self.openvpn.to_domain(),
             status=self.status,
             is_active=self.is_active,
             notes=self.notes,
@@ -174,10 +196,12 @@ class ListServersQueryDTO(BaseModel):
     country_code: str | None = None
     is_active: bool | None = None
     status: ServerStatus | None = None
+    openvpn_enabled: bool | None = None
 
     def to_domain(self) -> ListServersQuery:
         return ListServersQuery(
             country_code=self.country_code,
             is_active=self.is_active,
             status=self.status,
+            openvpn_enabled=self.openvpn_enabled,
         )

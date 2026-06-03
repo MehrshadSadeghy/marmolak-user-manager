@@ -37,6 +37,12 @@ class ServerORM(Base):
 
     xray_inbound_tag: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    openvpn_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    node_api_secret: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    vpn_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vpn_port: Mapped[int] = mapped_column(Integer, default=1194, nullable=False)
+    vpn_proto: Mapped[str] = mapped_column(String(16), default="udp", nullable=False)
+
     status: Mapped[ServerStatus] = mapped_column(
         Enum(ServerStatus, name="server_status"),
         default=ServerStatus.offline,

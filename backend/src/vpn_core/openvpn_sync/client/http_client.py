@@ -1,0 +1,99 @@
+import hashlib
+import hmac
+import json
+import logging
+import time
+
+import httpx
+
+from vpn_core.openvpn_sync.client.base import OpenVpnClient
+from vpn_core.openvpn_sync.domain.openvpn_user import OpenVpnUser
+from vpn_core.server_management_domain.domain.server import Server
+
+LOGGER = logging.getLogger(__name__)
+
+
+class HttpOpenVpnClient(OpenVpnClient):
+    """Calls vpn-node HTTP API with HMAC signing."""
+
+    def __init__(self, timeout: float = 30.0):
+        self._timeout = timeout
+
+    def _node_base_url(self, server: Server) -> str:
+        host = server.connection.host
+        port = server.connection.api_port
+        return f"http://{host}:{port}"
+
+    def _secret(self, server: Server) -> str:
+        secret = server.openvpn.node_api_secret
+        if not secret:
+            raise ValueError(f"Server {server.id} has no node_api_secret configured")
+        return secret
+
+    def _sign(self, secret: str, timestamp: str, method: str, path: str, body: bytes) -> str:
+        message = f"{timestamp}{method.upper()}{path}".encode() + body
+        return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+    async def _request(
+        self,
+        server: Server,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+    ) -> dict:
+        body = json.dumps(payload or {}, separators=(",", ":")).encode()
+        timestamp = str(int(time.time()))
+        secret = self._secret(server)
+        signature = self._sign(secret, timestamp, method, path, body)
+        headers = {
+            "Content-Type": "application/json",
+            "X-Node-Timestamp": timestamp,
+            "X-Node-Signature": signature,
+        }
+        url = f"{self._node_base_url(server)}{path}"
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.request(method, url, content=body, headers=headers)
+            response.raise_for_status()
+            return response.json()
+
+    def _vpn_remote(self, server: Server) -> tuple[str, int, str]:
+        host = server.openvpn.vpn_host or server.connection.host
+        return host, server.openvpn.vpn_port, server.openvpn.vpn_proto
+
+    async def health_check(self, server: Server) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.get(f"{self._node_base_url(server)}/node/health")
+                response.raise_for_status()
+                return response.json().get("status") == "healthy"
+        except Exception as exc:
+            LOGGER.warning("OpenVPN node health check failed for server %s: %s", server.id, exc)
+            return False
+
+    async def create_user(self, server: Server, user: OpenVpnUser) -> str:
+        host, port, proto = self._vpn_remote(server)
+        data = await self._request(
+            server,
+            "POST",
+            "/node/vpn/openvpn/create",
+            {
+                "common_name": user.common_name,
+                "server_config": {
+                    "server_host": host,
+                    "server_port": port,
+                    "proto": proto,
+                },
+            },
+        )
+        ovpn = data.get("ovpn_config")
+        if not ovpn:
+            raise RuntimeError("Node did not return ovpn_config")
+        return ovpn
+
+    async def delete_user(self, server: Server, common_name: str) -> None:
+        await self._request(
+            server,
+            "POST",
+            "/node/vpn/openvpn/delete",
+            {"common_name": common_name},
+        )

@@ -1,6 +1,7 @@
 from vpn_core.server_management_domain.db_model.server import ServerORM
 from vpn_core.server_management_domain.domain.capacity import ServerCapacity
 from vpn_core.server_management_domain.domain.connection_info import ConnectionInfo
+from vpn_core.server_management_domain.domain.openvpn_settings import OpenVpnSettings
 from vpn_core.server_management_domain.domain.resource_monitoring import ResourceMonitoring
 from vpn_core.server_management_domain.domain.server import Server
 
@@ -33,6 +34,13 @@ def server_orm_to_domain(obj: ServerORM) -> Server:
             network_out=obj.network_out,
         ),
         xray_inbound_tag=obj.xray_inbound_tag,
+        openvpn=OpenVpnSettings(
+            enabled=obj.openvpn_enabled,
+            node_api_secret=obj.node_api_secret,
+            vpn_host=obj.vpn_host,
+            vpn_port=obj.vpn_port,
+            vpn_proto=obj.vpn_proto,
+        ),
         status=obj.status,
         is_active=obj.is_active,
         last_health_check_at=obj.last_health_check_at,
@@ -63,6 +71,11 @@ def apply_domain_to_orm(server: Server, obj: ServerORM) -> None:
     obj.network_in = server.monitoring.network_in
     obj.network_out = server.monitoring.network_out
     obj.xray_inbound_tag = server.xray_inbound_tag
+    obj.openvpn_enabled = server.openvpn.enabled
+    obj.node_api_secret = server.openvpn.node_api_secret
+    obj.vpn_host = server.openvpn.vpn_host
+    obj.vpn_port = server.openvpn.vpn_port
+    obj.vpn_proto = server.openvpn.vpn_proto
     obj.status = server.status
     obj.is_active = server.is_active
     obj.last_health_check_at = server.last_health_check_at
