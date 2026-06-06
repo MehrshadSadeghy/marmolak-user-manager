@@ -4,7 +4,13 @@ from aiogram.types import CallbackQuery
 from vpn_core.billing_domain.domain.payment_request import PaymentPurpose
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.handlers.common import send_delivery
-from vpn_core.telegram_bot.keyboards.main import payment_methods_keyboard, plans_keyboard, renew_services_keyboard
+from vpn_core.telegram_bot.keyboards.main import (
+    buy_now_keyboard,
+    payment_methods_keyboard,
+    plans_keyboard,
+    renew_services_keyboard,
+)
+from vpn_core.telegram_bot.messages import format_toman, status_label_fa
 
 router = Router()
 
@@ -17,17 +23,29 @@ async def menu_services(callback: CallbackQuery, api: UserManagerApiClient) -> N
         return
     services = await api.list_user_services(str(callback.from_user.id))
     if not services:
-        await message.edit_text("You do not have any services yet.")
+        await message.edit_text(
+            "📦 هنوز سرویسی نداری!\n\n"
+            "🚀 همین الان اولین سرویس VPNت را بخر:\n"
+            "⚡ سرعت بالا · 🔒 امنیت کامل · 💎 قیمت عالی\n\n"
+            "👇 روی دکمه زیر بزن و شروع کن:",
+            reply_markup=buy_now_keyboard(),
+            parse_mode="HTML",
+        )
     else:
         lines = []
         for item in services:
+            status = status_label_fa(item["status_label"])
             lines.append(
-                f"#{item['subscription_id']} {item['service_type']} — {item['status_label']}\n"
-                f"Plan: {item['plan_name'] or '-'}\n"
-                f"Remaining: {item['remaining_days']} days, {item['remaining_data_label']}"
+                f"🔹 <b>#{item['subscription_id']}</b> {item['service_type']} — {status}\n"
+                f"📋 پلن: {item['plan_name'] or '—'}\n"
+                f"⏳ باقی‌مانده: {item['remaining_days']} روز · 📊 {item['remaining_data_label']}"
             )
-        await message.edit_text("Your services:\n\n" + "\n\n".join(lines))
-    await callback.answer()
+        await message.edit_text(
+            "📦 <b>سرویس‌های من</b>\n\n" + "\n\n".join(lines),
+            reply_markup=buy_now_keyboard(),
+            parse_mode="HTML",
+        )
+    await callback.answer("📦 سرویس‌های شما")
 
 
 @router.callback_query(F.data == "menu:renew")
@@ -38,10 +56,20 @@ async def menu_renew(callback: CallbackQuery, api: UserManagerApiClient) -> None
         return
     services = await api.list_user_services(str(callback.from_user.id))
     if not services:
-        await message.edit_text("You do not have any services to renew.")
+        await message.edit_text(
+            "😔 سرویسی برای تمدید نداری.\n\n"
+            "🛒 اول یک سرویس بخر، بعد هر وقت خواستی تمدیدش کن!",
+            reply_markup=buy_now_keyboard(),
+            parse_mode="HTML",
+        )
     else:
-        await message.edit_text("Select a service to renew:", reply_markup=renew_services_keyboard(services))
-    await callback.answer()
+        await message.edit_text(
+            "🔄 <b>تمدید سرویس</b>\n\n"
+            "👇 سرویسی که می‌خواهی تمدید کنی را انتخاب کن:",
+            reply_markup=renew_services_keyboard(services),
+            parse_mode="HTML",
+        )
+    await callback.answer("🔄 تمدید")
 
 
 @router.callback_query(F.data.startswith("renew:sub:"))
@@ -56,21 +84,28 @@ async def renew_subscription(callback: CallbackQuery, api: UserManagerApiClient)
     selected = next(s for s in services if s["subscription_id"] == subscription_id)
     if selected["is_active"]:
         await message.edit_text(
-            f"Service #{subscription_id} is active.\n"
-            f"Remaining time: {selected['remaining_days']} days\n"
-            f"Remaining data: {selected['remaining_data_label']}"
+            f"✅ سرویس <b>#{subscription_id}</b> فعال است.\n\n"
+            f"⏳ زمان باقی‌مانده: <b>{selected['remaining_days']} روز</b>\n"
+            f"📊 حجم باقی‌مانده: <b>{selected['remaining_data_label']}</b>\n\n"
+            "🎉 نیازی به تمدید نیست — از VPN لذت ببر!",
+            parse_mode="HTML",
         )
-        await callback.answer()
+        await callback.answer("✅ سرویس فعال است")
         return
     plans = await api.list_plans(selected["service_type"])
     if not plans:
-        await message.edit_text("No plans are available for renewal.")
+        await message.edit_text(
+            "😔 پلنی برای تمدید موجود نیست.\n📞 با پشتیبانی تماس بگیر.",
+            reply_markup=buy_now_keyboard(),
+        )
     else:
         await message.edit_text(
-            "Select a renewal plan:",
+            "🔄 <b>تمدید سرویس</b>\n\n"
+            "💎 پلن تمدید را انتخاب کن و دوباره وصل شو:",
             reply_markup=plans_keyboard(plans, prefix=f"renew:{subscription_id}"),
+            parse_mode="HTML",
         )
-    await callback.answer()
+    await callback.answer("💎 انتخاب پلن")
 
 
 @router.callback_query(F.data.regexp(r"^renew:\d+:plan:\d+$"))
@@ -85,23 +120,31 @@ async def renew_plan(callback: CallbackQuery, api: UserManagerApiClient) -> None
     if preview["sufficient_balance"]:
         result = await api.renew(tg_id, int(subscription_id), int(plan_id))
         await message.edit_text(
-            "Renewal completed from wallet.\n"
-            f"New balance: {result['wallet_balance_toman']} Toman"
+            "🎉 <b>تمدید با موفقیت انجام شد!</b>\n\n"
+            f"💰 موجودی جدید: <b>{format_toman(result['wallet_balance_toman'])}</b>\n\n"
+            "📩 کانفیگ در پیام بعدی ارسال می‌شود.",
+            parse_mode="HTML",
         )
         await send_delivery(message, result.get("delivery"))
+        await callback.answer("✅ تمدید موفق!")
     else:
         methods = await api.list_payment_methods()
         if not methods:
-            await message.edit_text("Insufficient wallet balance and no payment methods are configured.")
+            await message.edit_text(
+                "😔 موجودی کافی نیست.\n💳 کیف پولت را شارژ کن یا با پشتیبانی تماس بگیر.",
+                reply_markup=buy_now_keyboard(),
+            )
         else:
             await message.edit_text(
-                "Insufficient wallet balance for renewal.\nSelect a payment method:",
+                "💳 <b>موجودی برای تمدید کافی نیست</b>\n\n"
+                "👇 روش پرداخت را انتخاب کن:",
                 reply_markup=payment_methods_keyboard(
                     methods,
                     prefix=f"renewpay:{subscription_id}:{plan_id}",
                 ),
+                parse_mode="HTML",
             )
-    await callback.answer()
+        await callback.answer("💳 نیاز به پرداخت")
 
 
 @router.callback_query(F.data.regexp(r"^renewpay:\d+:\d+:pay:\d+$"))
@@ -125,9 +168,12 @@ async def renew_with_payment(callback: CallbackQuery, api: UserManagerApiClient)
     methods = await api.list_payment_methods()
     method = next(m for m in methods if m["id"] == int(method_id))
     await message.edit_text(
-        "Renewal payment initiated.\n"
-        f"Amount: {payment['payment_request']['amount_toman']} Toman\n\n"
-        f"{method['name']}\n{method['instructions']}\n\n"
-        "Please upload your payment receipt as a photo in this chat."
+        "💸 <b>درخواست پرداخت تمدید ثبت شد</b>\n\n"
+        f"💰 مبلغ: <b>{format_toman(payment['payment_request']['amount_toman'])}</b>\n\n"
+        f"🏦 <b>{method['name']}</b>\n"
+        f"{method['instructions']}\n\n"
+        "📸 عکس رسید را همینجا بفرست.\n"
+        "⏳ بعد از تأیید، سرویس دوباره فعال می‌شود!",
+        parse_mode="HTML",
     )
-    await callback.answer()
+    await callback.answer("📸 منتظر رسید")

@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
-from vpn_core.telegram_bot.keyboards.main import back_to_menu_keyboard
+from vpn_core.telegram_bot.keyboards.main import buy_now_keyboard
 
 router = Router()
 
@@ -16,8 +16,22 @@ async def menu_support(callback: CallbackQuery, api: UserManagerApiClient) -> No
     support = await api.get_support()
     username = support.get("support_username")
     if username:
-        text = f"Contact support: @{username.lstrip('@')}"
+        text = (
+            "💬 <b>پشتیبانی</b>\n\n"
+            f"👤 برای ارتباط با پشتیبانی:\n"
+            f"@{username.lstrip('@')}\n\n"
+            "🛒 سوالی درباره خرید داری؟ همین الان پیام بده!\n"
+            "⚡ تیم ما سریع پاسخ می‌دهد."
+        )
     else:
-        text = "Support username is not configured yet. Please contact the administrator."
-    await message.edit_text(text, reply_markup=back_to_menu_keyboard())
-    await callback.answer()
+        text = (
+            "💬 <b>پشتیبانی</b>\n\n"
+            "😔 نام کاربری پشتیبانی هنوز تنظیم نشده.\n"
+            "📞 لطفاً با مدیر سیستم تماس بگیرید."
+        )
+    await message.edit_text(
+        text,
+        reply_markup=buy_now_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer("💬 پشتیبانی")

@@ -3,8 +3,9 @@ from aiogram.types import Message
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
-from vpn_core.telegram_bot.handlers.common import ensure_user, send_delivery, telegram_id
-from vpn_core.telegram_bot.keyboards.main import admin_payment_keyboard
+from vpn_core.telegram_bot.handlers.common import ensure_user, telegram_id
+from vpn_core.telegram_bot.keyboards.main import admin_payment_keyboard, buy_now_keyboard
+from vpn_core.telegram_bot.messages import PURPOSE_FA, format_toman
 
 router = Router()
 
@@ -22,7 +23,12 @@ async def receive_receipt_photo(
     try:
         active = await api.get_active_payment(tg_id)
     except Exception:
-        await message.answer("No active payment request found. Start a purchase or top-up first.")
+        await message.answer(
+            "⚠️ درخواست پرداخت فعالی پیدا نشد.\n\n"
+            "🛒 اول از منو «خرید سرویس» یا «شارژ کیف پول» را انتخاب کن.",
+            reply_markup=buy_now_keyboard(),
+            parse_mode="HTML",
+        )
         return
 
     payment_request_id = active["payment_request"]["id"]
@@ -35,7 +41,14 @@ async def receive_receipt_photo(
             "receipt_message_id": message.message_id,
         },
     )
-    await message.answer("Waiting for approval. An admin will review your payment soon.")
+    await message.answer(
+        "✅ <b>رسید دریافت شد!</b>\n\n"
+        "⏳ در انتظار تأیید ادمین...\n"
+        "🎉 بعد از تأیید، سرویس یا موجودی فوراً فعال می‌شود!\n\n"
+        "💡 می‌توانید در همین حال سرویس‌های دیگر را هم ببینید 👇",
+        reply_markup=buy_now_keyboard(),
+        parse_mode="HTML",
+    )
     await _notify_admins(
         message,
         bot_config,
@@ -56,19 +69,20 @@ async def _notify_admins(
     photo: str,
 ) -> None:
     user_obj = user["user"]
+    purpose = PURPOSE_FA.get(payment_request["purpose"], payment_request["purpose"])
     text = (
-        "Payment review required\n"
-        f"Payment ID: {payment_request['id']}\n"
-        f"Purpose: {payment_request['purpose']}\n"
-        f"Amount: {payment_request['amount_toman']} Toman\n"
-        f"User ID: {user_obj['id']}\n"
-        f"Telegram ID: {user_obj['telegram_id']}\n"
-        f"Username: @{user_obj.get('username') or '-'}\n"
-        f"Wallet balance: {wallet['balance_toman']} Toman"
+        "🔔 <b>بررسی پرداخت</b>\n\n"
+        f"🧾 شماره: #{payment_request['id']}\n"
+        f"📌 نوع: {purpose}\n"
+        f"💰 مبلغ: {format_toman(payment_request['amount_toman'])}\n\n"
+        f"🆔 کاربر: {user_obj['id']}\n"
+        f"📱 تلگرام: {user_obj['telegram_id']}\n"
+        f"👤 @{user_obj.get('username') or '—'}\n"
+        f"💳 موجودی: {format_toman(wallet['balance_toman'])}"
     )
     markup = admin_payment_keyboard(payment_request["id"])
     for admin_id in bot_config.admin_chat_ids:
         try:
-            await message.bot.send_photo(admin_id, photo, caption=text, reply_markup=markup)
+            await message.bot.send_photo(admin_id, photo, caption=text, reply_markup=markup, parse_mode="HTML")
         except Exception:
-            await message.bot.send_message(admin_id, text, reply_markup=markup)
+            await message.bot.send_message(admin_id, text, reply_markup=markup, parse_mode="HTML")
