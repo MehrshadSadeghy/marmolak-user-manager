@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import HTTPException
 
 from vpn_core.billing_domain.domain.commands import (

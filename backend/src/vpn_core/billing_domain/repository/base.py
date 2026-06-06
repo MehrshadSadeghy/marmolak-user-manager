@@ -9,6 +9,7 @@ from vpn_core.billing_domain.domain.commands import (
     SubmitPaymentReceiptCommand,
 )
 from vpn_core.billing_domain.domain.financial_report import FinancialReport
+from vpn_core.billing_domain.domain.payment_method import PaymentMethod
 from vpn_core.billing_domain.domain.payment_request import PaymentRequest
 from vpn_core.billing_domain.domain.queries import (
     GetPaymentRequestQuery,
