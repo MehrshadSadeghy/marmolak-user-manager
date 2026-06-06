@@ -1,7 +1,10 @@
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import HTTPException
+
+LOGGER = logging.getLogger(__name__)
 
 from vpn_core.billing_domain.domain.commands import (
     CreatePaymentRequestCommand,
@@ -164,7 +167,7 @@ class BotGatewayService:
             )
         )
         subscription = await self._create_subscription(user_id, preview.plan)
-        delivery = await self._deliver_service(subscription)
+        delivery = await self._try_deliver(subscription)
         wallet = await self._billing_service.get_wallet(user_id)
         return PurchaseResult(
             subscription=subscription,
@@ -240,14 +243,21 @@ class BotGatewayService:
         if not request:
             raise HTTPException(status_code=404, detail="Payment request not found")
 
-        await self._billing_service.review_payment_request(
-            ReviewPaymentRequestCommand(
+        if request.status == PaymentRequestStatus.completed:
+            raise HTTPException(status_code=400, detail="Payment already completed")
+
+        if request.status == PaymentRequestStatus.approved:
+            purchase_result = await self._finish_approved_payment(request)
+            await self._billing_service.mark_payment_completed(payment_request_id)
+            wallet = await self._billing_service.get_wallet(request.user_id)
+            return PaymentApprovalResult(
                 payment_request_id=payment_request_id,
-                reviewer_telegram_id=reviewer_telegram_id,
-                approve=True,
-                admin_note=admin_note,
+                wallet_balance_toman=wallet.balance_toman,
+                purchase=purchase_result,
             )
-        )
+
+        if request.status != PaymentRequestStatus.pending_approval:
+            raise HTTPException(status_code=400, detail="Payment request is not pending approval")
 
         await self._billing_service.credit_wallet(
             CreditWalletCommand(
@@ -259,32 +269,102 @@ class BotGatewayService:
             )
         )
 
-        purchase_result: PurchaseResult | None = None
-        if request.purpose == PaymentPurpose.topup:
-            pass
-        elif request.purpose == PaymentPurpose.purchase:
-            if request.plan_id is None:
-                raise HTTPException(status_code=400, detail="Payment request missing plan")
-            purchase_result = await self._fulfill_purchase_from_wallet(
-                request.user_id,
-                request.plan_id,
+        try:
+            purchase_result = await self._execute_payment_purpose(request)
+            await self._billing_service.review_payment_request(
+                ReviewPaymentRequestCommand(
+                    payment_request_id=payment_request_id,
+                    reviewer_telegram_id=reviewer_telegram_id,
+                    approve=True,
+                    admin_note=admin_note,
+                )
             )
-        elif request.purpose == PaymentPurpose.renewal:
-            if request.subscription_id is None or request.plan_id is None:
-                raise HTTPException(status_code=400, detail="Payment request missing renewal data")
-            purchase_result = await self._fulfill_renewal_from_wallet(
-                request.user_id,
-                request.subscription_id,
-                request.plan_id,
+            await self._billing_service.mark_payment_completed(payment_request_id)
+        except HTTPException:
+            await self._billing_service.debit_wallet(
+                DebitWalletCommand(
+                    user_id=request.user_id,
+                    amount_toman=request.amount_toman,
+                    description=f"Rollback payment #{payment_request_id} approval",
+                    reference_type="payment_request",
+                    reference_id=payment_request_id,
+                )
             )
+            raise
 
-        await self._billing_service.mark_payment_completed(payment_request_id)
         wallet = await self._billing_service.get_wallet(request.user_id)
         return PaymentApprovalResult(
             payment_request_id=payment_request_id,
             wallet_balance_toman=wallet.balance_toman,
             purchase=purchase_result,
         )
+
+    async def _finish_approved_payment(self, request) -> PurchaseResult | None:
+        if request.purpose == PaymentPurpose.topup:
+            return None
+        if request.purpose == PaymentPurpose.purchase:
+            if request.plan_id is None:
+                raise HTTPException(status_code=400, detail="Payment request missing plan")
+            existing = await self._find_subscription_for_payment(request)
+            if existing:
+                delivery = await self._try_deliver(existing)
+                wallet = await self._billing_service.get_wallet(request.user_id)
+                return PurchaseResult(
+                    subscription=existing,
+                    wallet_balance_toman=wallet.balance_toman,
+                    paid_from_wallet=False,
+                    payment_request_id=request.id,
+                    delivery=delivery,
+                )
+            return await self._fulfill_purchase_from_wallet(request.user_id, request.plan_id)
+        if request.purpose == PaymentPurpose.renewal:
+            if request.subscription_id is None or request.plan_id is None:
+                raise HTTPException(status_code=400, detail="Payment request missing renewal data")
+            return await self._fulfill_renewal_from_wallet(
+                request.user_id,
+                request.subscription_id,
+                request.plan_id,
+            )
+        return None
+
+    async def _execute_payment_purpose(self, request) -> PurchaseResult | None:
+        if request.purpose == PaymentPurpose.topup:
+            return None
+        if request.purpose == PaymentPurpose.purchase:
+            if request.plan_id is None:
+                raise HTTPException(status_code=400, detail="Payment request missing plan")
+            return await self._fulfill_purchase_from_wallet(request.user_id, request.plan_id)
+        if request.purpose == PaymentPurpose.renewal:
+            if request.subscription_id is None or request.plan_id is None:
+                raise HTTPException(status_code=400, detail="Payment request missing renewal data")
+            return await self._fulfill_renewal_from_wallet(
+                request.user_id,
+                request.subscription_id,
+                request.plan_id,
+            )
+        return None
+
+    async def _find_subscription_for_payment(self, request):
+        if request.plan_id is None:
+            return None
+        subscriptions = await self._subscription_service.list_subscriptions(
+            ListSubscriptionsQuery(user_id=request.user_id)
+        )
+        payment_created = request.created_at
+        matches = [
+            subscription
+            for subscription in subscriptions
+            if subscription.plan_id == request.plan_id
+            and subscription.status == SubscriptionStatus.active
+            and (
+                payment_created is None
+                or subscription.created_at is None
+                or subscription.created_at >= payment_created
+            )
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda item: item.id or 0)
 
     async def reject_payment(
         self,
@@ -365,8 +445,20 @@ class BotGatewayService:
                 reference_id=plan_id,
             )
         )
-        subscription = await self._create_subscription(user_id, plan)
-        delivery = await self._deliver_service(subscription)
+        try:
+            subscription = await self._create_subscription(user_id, plan)
+            delivery = await self._try_deliver(subscription)
+        except HTTPException:
+            await self._billing_service.credit_wallet(
+                CreditWalletCommand(
+                    user_id=user_id,
+                    amount_toman=plan.price_toman,
+                    description=f"Rollback purchase {plan.name}",
+                    reference_type="plan",
+                    reference_id=plan_id,
+                )
+            )
+            raise
         wallet = await self._billing_service.get_wallet(user_id)
         return PurchaseResult(
             subscription=subscription,
@@ -403,7 +495,7 @@ class BotGatewayService:
         )
         if not renewed:
             raise HTTPException(status_code=400, detail="Could not renew subscription")
-        delivery = await self._deliver_service(renewed)
+        delivery = await self._try_deliver(renewed)
         wallet = await self._billing_service.get_wallet(user_id)
         return PurchaseResult(
             subscription=renewed,
@@ -433,6 +525,17 @@ class BotGatewayService:
         if not service or not service.is_enabled:
             raise HTTPException(status_code=400, detail="Service type is disabled")
         return plan
+
+    async def _try_deliver(self, subscription: Subscription) -> ServiceConfigDelivery | None:
+        try:
+            return await self._deliver_service(subscription)
+        except HTTPException as exc:
+            LOGGER.warning(
+                "Service delivery failed for subscription %s: %s",
+                subscription.id,
+                exc.detail,
+            )
+            return None
 
     async def _deliver_service(self, subscription: Subscription) -> ServiceConfigDelivery:
         if subscription.service_type == "openvpn":

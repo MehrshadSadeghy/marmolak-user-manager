@@ -117,15 +117,26 @@ async def admin_approve(callback: CallbackQuery, api: UserManagerApiClient, bot_
     if not message or not await guard_admin_callback(callback, bot_config):
         return
     payment_id = int(callback.data.rsplit(":", 1)[1])
-    result = await api.approve_payment(str(callback.from_user.id), payment_id)
+    try:
+        result = await api.approve_payment(str(callback.from_user.id), payment_id)
+    except Exception as exc:
+        if await handle_admin_api_error(callback, exc):
+            return
+        raise
     text = (
         f"✅ پرداخت #{payment_id} تأیید شد.\n"
         f"💰 موجودی: {format_toman(result['wallet_balance_toman'])}"
     )
     purchase = result.get("purchase")
-    if purchase and purchase.get("delivery"):
+    delivery = purchase.get("delivery") if purchase else None
+    if purchase and not delivery:
+        text += (
+            "\n\n⚠️ سرویس فعال شد ولی کانفیگ ارسال نشد.\n"
+            "احتمالاً سرور OpenVPN تنظیم نشده — از پنل سرورها بررسی کن."
+        )
+    if delivery:
         await message.edit_caption(text, parse_mode="HTML")
-        await send_delivery(message, purchase["delivery"])
+        await send_delivery(message, delivery)
     else:
         await message.edit_caption(text, parse_mode="HTML")
     await callback.answer("✅ تأیید شد")

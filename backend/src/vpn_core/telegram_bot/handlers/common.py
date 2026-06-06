@@ -70,10 +70,24 @@ async def guard_admin_callback(callback: CallbackQuery, bot_config: TelegramBotC
 
 
 async def handle_admin_api_error(event: CallbackQuery | Message, exc: Exception) -> bool:
-    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 403:
-        if isinstance(event, CallbackQuery):
-            await event.answer(ADMIN_FORBIDDEN_MESSAGE, show_alert=True)
-        else:
-            await event.answer(ADMIN_FORBIDDEN_MESSAGE)
-        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        if exc.response.status_code == 403:
+            if isinstance(event, CallbackQuery):
+                await event.answer(ADMIN_FORBIDDEN_MESSAGE, show_alert=True)
+            else:
+                await event.answer(ADMIN_FORBIDDEN_MESSAGE)
+            return True
+        if exc.response.status_code == 400:
+            detail = exc.response.text
+            try:
+                payload = exc.response.json()
+                detail = payload.get("detail", detail)
+            except Exception:
+                pass
+            message = f"⚠️ خطا: {detail}"
+            if isinstance(event, CallbackQuery):
+                await event.answer(message, show_alert=True)
+            else:
+                await event.answer(message)
+            return True
     return False

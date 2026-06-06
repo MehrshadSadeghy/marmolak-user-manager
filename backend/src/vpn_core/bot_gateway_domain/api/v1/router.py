@@ -239,7 +239,6 @@ async def get_active_payment(
     if not request:
         raise HTTPException(status_code=404, detail="No active payment request")
     return PaymentRequestResponseDTO(payment_request=request)
-    raise HTTPException(status_code=404, detail="No active payment request")
 
 admin_router = APIRouter(
     prefix="/api/v1/admin/bot",
