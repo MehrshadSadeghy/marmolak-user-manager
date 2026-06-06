@@ -10,7 +10,7 @@ from vpn_core.telegram_bot.keyboards.main import (
     plans_keyboard,
     renew_services_keyboard,
 )
-from vpn_core.telegram_bot.messages import format_toman, status_label_fa
+from vpn_core.telegram_bot.messages import format_payment_method_display, format_toman, status_label_fa
 
 router = Router()
 
@@ -170,8 +170,7 @@ async def renew_with_payment(callback: CallbackQuery, api: UserManagerApiClient)
     await message.edit_text(
         "💸 <b>درخواست پرداخت تمدید ثبت شد</b>\n\n"
         f"💰 مبلغ: <b>{format_toman(payment['payment_request']['amount_toman'])}</b>\n\n"
-        f"🏦 <b>{method['name']}</b>\n"
-        f"{method['instructions']}\n\n"
+        f"{format_payment_method_display(method)}\n\n"
         "📸 عکس رسید را همینجا بفرست.\n"
         "⏳ بعد از تأیید، سرویس دوباره فعال می‌شود!",
         parse_mode="HTML",

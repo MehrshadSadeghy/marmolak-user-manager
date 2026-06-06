@@ -19,7 +19,26 @@ class PostgresManager(Manager):
         url = self._provider.create_url()
         self._engine = self._provider.create_engine(url)
         self._base.metadata.create_all(bind=self._engine)
+        self._apply_schema_patches()
         self._sessionmaker = self._provider.setup_session(self._engine)
+
+    def _apply_schema_patches(self) -> None:
+        from sqlalchemy import inspect, text
+
+        if self._engine is None:
+            return
+        with self._engine.begin() as conn:
+            inspector = inspect(conn)
+            if "payment_methods" not in inspector.get_table_names():
+                return
+            columns = {column["name"] for column in inspector.get_columns("payment_methods")}
+            if "card_numbers" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE payment_methods "
+                        "ADD COLUMN card_numbers JSONB NOT NULL DEFAULT '[]'::jsonb"
+                    )
+                )
 
     async def run(self) -> None:
         pass

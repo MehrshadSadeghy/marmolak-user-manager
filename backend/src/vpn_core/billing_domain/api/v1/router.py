@@ -1,3 +1,4 @@
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
@@ -6,6 +7,7 @@ from vpn_core.billing_domain.api.v1.dependency import BillingServiceDep
 from vpn_core.billing_domain.api.v1.dto import (
     CreatePaymentMethodDTO,
     CreditWalletDTO,
+    FinancialReportResponseDTO,
     PaymentMethodListResponseDTO,
     PaymentMethodResponseDTO,
     PaymentRequestListResponseDTO,
@@ -51,6 +53,8 @@ async def update_payment_method(
         existing.name = body.name
     if body.instructions is not None:
         existing.instructions = body.instructions
+    if body.card_numbers is not None:
+        existing.card_numbers = [item.strip() for item in body.card_numbers if item.strip()]
     if body.is_active is not None:
         existing.is_active = body.is_active
     if body.sort_order is not None:
@@ -108,3 +112,16 @@ async def list_payment_requests(
         ListPaymentRequestsQuery(user_id=user_id, status=status)
     )
     return PaymentRequestListResponseDTO(payment_requests=requests)
+
+
+@router.get("/reports/financial", response_model=FinancialReportResponseDTO)
+async def get_financial_report(
+    service: BillingServiceDep,
+    period: Annotated[str, Query(pattern="^(daily|weekly|monthly)$")],
+    anchor_date: Annotated[date | None, Query(description="Anchor date (YYYY-MM-DD), defaults to today UTC")] = None,
+) -> FinancialReportResponseDTO:
+    anchor = None
+    if anchor_date is not None:
+        anchor = datetime.combine(anchor_date, datetime.min.time(), tzinfo=UTC)
+    report = await service.get_financial_report(period, anchor)
+    return FinancialReportResponseDTO(report=report)

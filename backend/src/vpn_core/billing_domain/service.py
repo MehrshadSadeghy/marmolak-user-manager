@@ -8,6 +8,7 @@ from vpn_core.billing_domain.domain.commands import (
     SubmitPaymentReceiptCommand,
 )
 from vpn_core.billing_domain.domain.payment_method import PaymentMethod
+from vpn_core.billing_domain.domain.financial_report import FinancialReport
 from vpn_core.billing_domain.domain.payment_request import (
     PaymentRequest,
     PaymentRequestStatus,
@@ -125,6 +126,43 @@ class BillingService:
         query: ListPaymentRequestsQuery,
     ) -> list[PaymentRequest]:
         return await self._repository.list_payment_requests(query)
+
+    async def get_financial_report(
+        self,
+        period: str,
+        anchor: datetime | None = None,
+    ) -> FinancialReport:
+        from vpn_core.billing_domain.domain.financial_report import FinancialReport as Report
+
+        start_at, end_at = self._resolve_report_range(period, anchor)
+        report = await self._repository.get_financial_report(start_at, end_at)
+        return Report(**{**report.model_dump(), "period": period})
+
+    @staticmethod
+    def _resolve_report_range(period: str, anchor: datetime | None) -> tuple[datetime, datetime]:
+        from datetime import UTC, datetime, timedelta
+
+        now = anchor or datetime.now(UTC)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+
+        if period == "daily":
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + timedelta(days=1)
+        elif period == "weekly":
+            start = (now - timedelta(days=now.weekday())).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            end = start + timedelta(days=7)
+        elif period == "monthly":
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            if start.month == 12:
+                end = start.replace(year=start.year + 1, month=1)
+            else:
+                end = start.replace(month=start.month + 1)
+        else:
+            raise HTTPException(status_code=400, detail="period must be daily, weekly, or monthly")
+        return start, end
 
     async def review_payment_request(self, command: ReviewPaymentRequestCommand) -> PaymentRequest:
         request = await self._repository.get_payment_request(

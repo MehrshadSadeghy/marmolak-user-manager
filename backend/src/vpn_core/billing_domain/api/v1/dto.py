@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+from vpn_core.billing_domain.domain.financial_report import FinancialReport
 from vpn_core.billing_domain.domain.payment_method import PaymentMethod
 from vpn_core.billing_domain.domain.payment_request import PaymentRequest
 from vpn_core.billing_domain.domain.wallet import Wallet, WalletTransaction
@@ -15,7 +16,8 @@ class PaymentMethodListResponseDTO(BaseModel):
 
 class CreatePaymentMethodDTO(BaseModel):
     name: str
-    instructions: str
+    instructions: str = ""
+    card_numbers: list[str] = []
     is_active: bool = True
     sort_order: int = 0
 
@@ -23,6 +25,7 @@ class CreatePaymentMethodDTO(BaseModel):
         return PaymentMethod(
             name=self.name,
             instructions=self.instructions,
+            card_numbers=[item.strip() for item in self.card_numbers if item.strip()],
             is_active=self.is_active,
             sort_order=self.sort_order,
         )
@@ -31,6 +34,7 @@ class CreatePaymentMethodDTO(BaseModel):
 class UpdatePaymentMethodDTO(BaseModel):
     name: str | None = None
     instructions: str | None = None
+    card_numbers: list[str] | None = None
     is_active: bool | None = None
     sort_order: int | None = None
 
@@ -51,3 +55,7 @@ class CreditWalletDTO(BaseModel):
 
 class PaymentRequestListResponseDTO(BaseModel):
     payment_requests: list[PaymentRequest]
+
+
+class FinancialReportResponseDTO(BaseModel):
+    report: FinancialReport

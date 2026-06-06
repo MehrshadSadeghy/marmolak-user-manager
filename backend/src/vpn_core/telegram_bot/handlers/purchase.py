@@ -10,7 +10,7 @@ from vpn_core.telegram_bot.keyboards.main import (
     plans_keyboard,
     services_keyboard,
 )
-from vpn_core.telegram_bot.messages import format_toman
+from vpn_core.telegram_bot.messages import format_payment_method_display, format_toman
 
 router = Router()
 
@@ -128,8 +128,7 @@ async def buy_with_payment(callback: CallbackQuery, api: UserManagerApiClient) -
     await message.edit_text(
         "💸 <b>درخواست پرداخت ثبت شد</b>\n\n"
         f"💰 مبلغ: <b>{format_toman(payment['payment_request']['amount_toman'])}</b>\n\n"
-        f"🏦 <b>{method['name']}</b>\n"
-        f"{method['instructions']}\n\n"
+        f"{format_payment_method_display(method)}\n\n"
         f"{instructions}\n\n"
         "📸 بعد از پرداخت، <b>عکس رسید</b> را همینجا بفرست.\n"
         "⏳ بعد از تأیید ادمین، سرویس فوراً فعال می‌شود!",

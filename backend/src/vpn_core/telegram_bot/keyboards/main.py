@@ -90,6 +90,8 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="⏳ پرداخت‌های در انتظار", callback_data="admin:payments")],
             [InlineKeyboardButton(text="🔧 انواع سرویس", callback_data="admin:services")],
             [InlineKeyboardButton(text="📋 پلن‌ها", callback_data="admin:plans")],
+            [InlineKeyboardButton(text="💳 روش‌های پرداخت", callback_data="admin:payment-methods")],
+            [InlineKeyboardButton(text="📊 گزارش مالی", callback_data="admin:report")],
             [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="menu:home")],
         ]
     )
@@ -127,3 +129,77 @@ def admin_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
         )
     rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:admin")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def admin_plans_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ افزودن پلن", callback_data="admin:plan:add")],
+            [InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:admin")],
+        ]
+    )
+
+
+def admin_plan_service_types_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=item["display_name"],
+                callback_data=f"admin:plan:add:type:{item['slug']}",
+            )
+        ]
+        for item in services
+    ]
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="admin:plans")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_payment_methods_keyboard(methods: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for method in methods:
+        state = "🟢" if method.get("is_active", True) else "🔴"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{state} {method['name']}",
+                    callback_data=f"admin:pm:{method['id']}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="➕ افزودن روش پرداخت", callback_data="admin:pm:add")])
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:admin")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_payment_method_detail_keyboard(method_id: int, *, is_active: bool) -> InlineKeyboardMarkup:
+    toggle_text = "🔴 غیرفعال کردن" if is_active else "🟢 فعال کردن"
+    toggle_action = "disable" if is_active else "enable"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_text,
+                    callback_data=f"admin:pm:toggle:{toggle_action}:{method_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 حذف",
+                    callback_data=f"admin:pm:delete:{method_id}",
+                )
+            ],
+            [InlineKeyboardButton(text="◀️ بازگشت", callback_data="admin:payment-methods")],
+        ]
+    )
+
+
+def admin_report_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📅 روزانه", callback_data="admin:report:daily"),
+                InlineKeyboardButton(text="📆 هفتگی", callback_data="admin:report:weekly"),
+            ],
+            [InlineKeyboardButton(text="🗓 ماهانه", callback_data="admin:report:monthly")],
+            [InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:admin")],
+        ]
+    )

@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message
 from vpn_core.billing_domain.domain.payment_request import PaymentPurpose
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.keyboards.main import back_to_menu_keyboard, payment_methods_keyboard
-from vpn_core.telegram_bot.messages import format_toman
+from vpn_core.telegram_bot.messages import format_payment_method_display, format_toman
 from vpn_core.telegram_bot.states import UserFlow
 
 router = Router()
@@ -74,8 +74,7 @@ async def topup_payment(callback: CallbackQuery, api: UserManagerApiClient) -> N
     await message.edit_text(
         "💸 <b>درخواست شارژ کیف پول ثبت شد</b>\n\n"
         f"💰 مبلغ: <b>{format_toman(payment['payment_request']['amount_toman'])}</b>\n\n"
-        f"🏦 <b>{method['name']}</b>\n"
-        f"{method['instructions']}\n\n"
+        f"{format_payment_method_display(method)}\n\n"
         f"{instructions}\n\n"
         "📸 بعد از پرداخت، <b>عکس رسید</b> را همینجا بفرست.\n"
         "⏳ بعد از تأیید، موجودی به کیف پولت اضافه می‌شود!",

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from vpn_core.billing_domain.domain.commands import (
     CreatePaymentRequestCommand,
@@ -7,7 +8,7 @@ from vpn_core.billing_domain.domain.commands import (
     ReviewPaymentRequestCommand,
     SubmitPaymentReceiptCommand,
 )
-from vpn_core.billing_domain.domain.payment_method import PaymentMethod
+from vpn_core.billing_domain.domain.financial_report import FinancialReport
 from vpn_core.billing_domain.domain.payment_request import PaymentRequest
 from vpn_core.billing_domain.domain.queries import (
     GetPaymentRequestQuery,
@@ -72,4 +73,8 @@ class BillingRepository(ABC):
 
     @abstractmethod
     async def list_payment_requests(self, query: ListPaymentRequestsQuery) -> list[PaymentRequest]:
+        pass
+
+    @abstractmethod
+    async def get_financial_report(self, start_at: datetime, end_at: datetime) -> FinancialReport:
         pass

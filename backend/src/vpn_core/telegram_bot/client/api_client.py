@@ -157,3 +157,57 @@ class UserManagerApiClient:
             admin_telegram_id=admin_telegram_id,
         )
         return data["plans"]
+    async def create_plan_admin(self, admin_telegram_id: str, payload: dict) -> dict:
+        data = await self._request(
+            "POST",
+            "/api/v1/admin/subscription/plans",
+            json=payload,
+            admin_telegram_id=admin_telegram_id,
+        )
+        return data["plan"]
+
+    async def list_payment_methods_admin(self, admin_telegram_id: str) -> list[dict]:
+        data = await self._request(
+            "GET",
+            "/api/v1/admin/billing/payment-methods",
+            admin_telegram_id=admin_telegram_id,
+        )
+        return data["payment_methods"]
+
+    async def create_payment_method_admin(self, admin_telegram_id: str, payload: dict) -> dict:
+        data = await self._request(
+            "POST",
+            "/api/v1/admin/billing/payment-methods",
+            json=payload,
+            admin_telegram_id=admin_telegram_id,
+        )
+        return data["payment_method"]
+
+    async def update_payment_method_admin(
+        self,
+        admin_telegram_id: str,
+        method_id: int,
+        payload: dict,
+    ) -> dict:
+        data = await self._request(
+            "PATCH",
+            f"/api/v1/admin/billing/payment-methods/{method_id}",
+            json=payload,
+            admin_telegram_id=admin_telegram_id,
+        )
+        return data["payment_method"]
+
+    async def delete_payment_method_admin(self, admin_telegram_id: str, method_id: int) -> dict:
+        return await self._request(
+            "DELETE",
+            f"/api/v1/admin/billing/payment-methods/{method_id}",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def get_financial_report_admin(self, admin_telegram_id: str, period: str) -> dict:
+        data = await self._request(
+            "GET",
+            f"/api/v1/admin/billing/reports/financial?period={period}",
+            admin_telegram_id=admin_telegram_id,
+        )
+        return data["report"]

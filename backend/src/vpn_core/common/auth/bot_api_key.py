@@ -14,8 +14,10 @@ def parse_chat_ids(raw: str | None) -> set[str]:
 
 
 def get_admin_chat_ids() -> set[str]:
-    return parse_chat_ids(os.getenv("ADMIN_CHAT_IDS")) | parse_chat_ids(
-        os.getenv("SUPER_ADMIN_CHAT_IDS")
+    return (
+        parse_chat_ids(os.getenv("ADMIN_CHAT_IDS"))
+        | parse_chat_ids(os.getenv("SUPER_ADMIN_CHAT_IDS"))
+        | parse_chat_ids(os.getenv("TELEGRAM_ADMIN_IDS"))
     )
 
 

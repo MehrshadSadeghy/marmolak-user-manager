@@ -1,17 +1,20 @@
+from datetime import UTC, datetime
+
 from sqlalchemy.orm import Session
 
 from vpn_core.billing_domain.db_model import PaymentMethod as PaymentMethodORM
 from vpn_core.billing_domain.db_model import PaymentRequest as PaymentRequestORM
 from vpn_core.billing_domain.db_model import Wallet as WalletORM
 from vpn_core.billing_domain.db_model import WalletTransaction as WalletTransactionORM
+from vpn_core.billing_domain.domain.financial_report import FinancialReport, PurposeBreakdown
 from vpn_core.billing_domain.domain.payment_method import PaymentMethod
-from vpn_core.billing_domain.domain.payment_request import PaymentRequest
+from vpn_core.billing_domain.domain.payment_request import PaymentPurpose, PaymentRequest, PaymentRequestStatus
 from vpn_core.billing_domain.domain.queries import (
     GetPaymentRequestQuery,
     GetWalletQuery,
     ListPaymentRequestsQuery,
 )
-from vpn_core.billing_domain.domain.wallet import Wallet, WalletTransaction
+from vpn_core.billing_domain.domain.wallet import Wallet, WalletTransaction, WalletTransactionType
 from vpn_core.billing_domain.repository.base import BillingRepository
 
 
@@ -73,6 +76,7 @@ class BillingDBRepository(BillingRepository):
         obj = PaymentMethodORM(
             name=method.name,
             instructions=method.instructions,
+            card_numbers=method.card_numbers,
             is_active=method.is_active,
             sort_order=method.sort_order,
         )
@@ -87,6 +91,7 @@ class BillingDBRepository(BillingRepository):
             return None
         obj.name = method.name
         obj.instructions = method.instructions
+        obj.card_numbers = method.card_numbers
         obj.is_active = method.is_active
         obj.sort_order = method.sort_order
         self._session.add(obj)
@@ -163,3 +168,69 @@ class BillingDBRepository(BillingRepository):
             db_query = db_query.filter(PaymentRequestORM.status == query.status)
         rows = db_query.order_by(PaymentRequestORM.created_at.desc()).all()
         return [PaymentRequest.model_validate(row) for row in rows]
+
+    async def get_financial_report(self, start_at: datetime, end_at: datetime) -> FinancialReport:
+        start = start_at if start_at.tzinfo else start_at.replace(tzinfo=UTC)
+        end = end_at if end_at.tzinfo else end_at.replace(tzinfo=UTC)
+
+        completed = (
+            self._session.query(PaymentRequestORM)
+            .filter(
+                PaymentRequestORM.status == PaymentRequestStatus.completed,
+                PaymentRequestORM.updated_at >= start,
+                PaymentRequestORM.updated_at < end,
+            )
+            .all()
+        )
+        manual_total = sum(item.amount_toman for item in completed)
+        by_purpose: dict[str, PurposeBreakdown] = {}
+        for purpose in PaymentPurpose:
+            items = [item for item in completed if item.purpose == purpose]
+            by_purpose[purpose.value] = PurposeBreakdown(
+                count=len(items),
+                total_toman=sum(item.amount_toman for item in items),
+            )
+
+        wallet_debits = (
+            self._session.query(WalletTransactionORM)
+            .filter(
+                WalletTransactionORM.transaction_type == WalletTransactionType.debit,
+                WalletTransactionORM.created_at >= start,
+                WalletTransactionORM.created_at < end,
+            )
+            .all()
+        )
+        wallet_sales_total = sum(item.amount_toman for item in wallet_debits)
+        wallet_credits = (
+            self._session.query(WalletTransactionORM)
+            .filter(
+                WalletTransactionORM.transaction_type == WalletTransactionType.credit,
+                WalletTransactionORM.reference_type == "payment_request",
+                WalletTransactionORM.created_at >= start,
+                WalletTransactionORM.created_at < end,
+            )
+            .all()
+        )
+        wallet_topups_total = sum(item.amount_toman for item in wallet_credits)
+
+        pending = (
+            self._session.query(PaymentRequestORM)
+            .filter(PaymentRequestORM.status == PaymentRequestStatus.pending_approval)
+            .all()
+        )
+
+        return FinancialReport(
+            period="custom",
+            start_at=start,
+            end_at=end,
+            total_income_toman=manual_total + wallet_sales_total,
+            manual_payments_count=len(completed),
+            manual_payments_total_toman=manual_total,
+            manual_payments_by_purpose=by_purpose,
+            wallet_sales_count=len(wallet_debits),
+            wallet_sales_total_toman=wallet_sales_total,
+            wallet_topups_count=len(wallet_credits),
+            wallet_topups_total_toman=wallet_topups_total,
+            pending_approval_count=len(pending),
+            pending_approval_total_toman=sum(item.amount_toman for item in pending),
+        )
