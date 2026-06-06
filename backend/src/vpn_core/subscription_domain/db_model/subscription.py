@@ -14,6 +14,7 @@ class Subscription(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    service_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="openvpn")
 
     uuid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
 

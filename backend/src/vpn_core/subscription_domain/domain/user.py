@@ -9,5 +9,6 @@ class User(BaseModel):
     id: int | None = None
     telegram_id: str
     chat_id: str
+    username: str | None = None
     is_active: bool = True
     created_at: datetime | None = None

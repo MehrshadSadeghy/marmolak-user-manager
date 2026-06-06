@@ -1,0 +1,112 @@
+from aiogram import F, Router
+from aiogram.types import CallbackQuery
+
+from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
+from vpn_core.telegram_bot.config import TelegramBotConfig
+from vpn_core.telegram_bot.handlers.common import send_delivery
+from vpn_core.telegram_bot.keyboards.main import admin_menu_keyboard, admin_services_keyboard
+
+router = Router()
+
+
+def _is_admin(callback: CallbackQuery, bot_config: TelegramBotConfig) -> bool:
+    return str(callback.from_user.id) in bot_config.admin_chat_ids
+
+
+@router.callback_query(F.data == "menu:admin")
+async def menu_admin(callback: CallbackQuery, bot_config: TelegramBotConfig) -> None:
+    message = callback.message
+    if not message or not _is_admin(callback, bot_config):
+        await callback.answer("Admin access required", show_alert=True)
+        return
+    await message.edit_text("Admin panel", reply_markup=admin_menu_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:payments")
+async def admin_payments(callback: CallbackQuery, api: UserManagerApiClient, bot_config: TelegramBotConfig) -> None:
+    message = callback.message
+    if not message or not _is_admin(callback, bot_config):
+        await callback.answer("Admin access required", show_alert=True)
+        return
+    payments = await api.list_pending_payments(str(callback.from_user.id))
+    if not payments:
+        await message.edit_text("No pending payments.", reply_markup=admin_menu_keyboard())
+    else:
+        lines = [f"#{p['id']} user={p['user_id']} amount={p['amount_toman']} purpose={p['purpose']}" for p in payments]
+        await message.edit_text("Pending payments:\n" + "\n".join(lines), reply_markup=admin_menu_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:services")
+async def admin_services(callback: CallbackQuery, api: UserManagerApiClient, bot_config: TelegramBotConfig) -> None:
+    message = callback.message
+    if not message or not _is_admin(callback, bot_config):
+        await callback.answer("Admin access required", show_alert=True)
+        return
+    services = await api.list_service_types_admin(str(callback.from_user.id))
+    await message.edit_text("Toggle service types:", reply_markup=admin_services_keyboard(services))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:toggle:"))
+async def admin_toggle_service(callback: CallbackQuery, api: UserManagerApiClient, bot_config: TelegramBotConfig) -> None:
+    message = callback.message
+    if not message or not _is_admin(callback, bot_config):
+        await callback.answer("Admin access required", show_alert=True)
+        return
+    _, _, action, slug = callback.data.split(":", 3)
+    await api.toggle_service_type(str(callback.from_user.id), slug, action == "enable")
+    services = await api.list_service_types_admin(str(callback.from_user.id))
+    await message.edit_text("Toggle service types:", reply_markup=admin_services_keyboard(services))
+    await callback.answer("Updated")
+
+
+@router.callback_query(F.data == "admin:plans")
+async def admin_plans(callback: CallbackQuery, api: UserManagerApiClient, bot_config: TelegramBotConfig) -> None:
+    message = callback.message
+    if not message or not _is_admin(callback, bot_config):
+        await callback.answer("Admin access required", show_alert=True)
+        return
+    plans = await api.list_plans_admin(str(callback.from_user.id))
+    if not plans:
+        await message.edit_text("No plans configured.", reply_markup=admin_menu_keyboard())
+    else:
+        lines = []
+        for plan in plans:
+            gb = plan["traffic_limit_bytes"] / (1024**3)
+            lines.append(
+                f"#{plan['id']} [{plan['service_type']}] {plan['name']} — {gb:.0f}GB / {plan['duration_days']}d — {plan['price_toman']} Toman"
+            )
+        await message.edit_text("Plans:\n" + "\n".join(lines), reply_markup=admin_menu_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:approve:"))
+async def admin_approve(callback: CallbackQuery, api: UserManagerApiClient, bot_config: TelegramBotConfig) -> None:
+    message = callback.message
+    if not message or not _is_admin(callback, bot_config):
+        await callback.answer("Admin access required", show_alert=True)
+        return
+    payment_id = int(callback.data.rsplit(":", 1)[1])
+    result = await api.approve_payment(str(callback.from_user.id), payment_id)
+    text = f"Payment #{payment_id} approved.\nWallet balance: {result['wallet_balance_toman']} Toman"
+    purchase = result.get("purchase")
+    if purchase and purchase.get("delivery"):
+        await message.edit_caption(text)
+        await send_delivery(message, purchase["delivery"])
+    else:
+        await message.edit_caption(text)
+    await callback.answer("Approved")
+
+
+@router.callback_query(F.data.startswith("admin:reject:"))
+async def admin_reject(callback: CallbackQuery, api: UserManagerApiClient, bot_config: TelegramBotConfig) -> None:
+    message = callback.message
+    if not message or not _is_admin(callback, bot_config):
+        await callback.answer("Admin access required", show_alert=True)
+        return
+    payment_id = int(callback.data.rsplit(":", 1)[1])
+    await api.reject_payment(str(callback.from_user.id), payment_id)
+    await message.edit_caption(f"Payment #{payment_id} rejected.")
+    await callback.answer("Rejected")

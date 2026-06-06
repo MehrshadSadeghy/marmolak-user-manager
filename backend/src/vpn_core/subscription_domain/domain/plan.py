@@ -9,8 +9,10 @@ class Plan(BaseModel):
     id: int | None = None
     name: str
     description: str = ""
+    service_type: str
     duration_days: int
     traffic_limit_bytes: int
+    price_toman: int = 0
     is_active: bool = True
     created_at: datetime | None = None
     updated_at: datetime | None = None

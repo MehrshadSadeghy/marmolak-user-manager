@@ -5,6 +5,7 @@ from vpn_core.subscription_domain.domain.queries import (
     GetPlanQuery,
     GetSubscriptionQuery,
     GetUserQuery,
+    ListPlansQuery,
     ListSubscriptionsQuery,
     ListTrafficUsagesQuery,
 )
@@ -23,6 +24,10 @@ class SubscriptionRepository(ABC):
         pass
 
     @abstractmethod
+    async def update_user(self, user: User) -> User | None:
+        pass
+
+    @abstractmethod
     async def list_users(self) -> list[User]:
         pass
 
@@ -35,7 +40,15 @@ class SubscriptionRepository(ABC):
         pass
 
     @abstractmethod
-    async def list_plans(self) -> list[Plan]:
+    async def list_plans(self, query: ListPlansQuery | None = None) -> list[Plan]:
+        pass
+
+    @abstractmethod
+    async def update_plan(self, plan: Plan) -> Plan | None:
+        pass
+
+    @abstractmethod
+    async def delete_plan(self, plan_id: int) -> bool:
         pass
 
     @abstractmethod

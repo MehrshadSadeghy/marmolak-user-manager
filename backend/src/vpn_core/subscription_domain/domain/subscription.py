@@ -17,6 +17,7 @@ class Subscription(BaseModel):
     id: int | None = None
     user_id: int
     plan_id: int
+    service_type: str
     uuid: str
     status: SubscriptionStatus = SubscriptionStatus.active
     traffic_limit_bytes: int = 0

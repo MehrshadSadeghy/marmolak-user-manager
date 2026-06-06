@@ -13,6 +13,7 @@ class User(Base):
 
     telegram_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     chat_id: Mapped[str] = mapped_column(String(64), index=True)
+    username: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

@@ -9,6 +9,7 @@ from vpn_core.subscription_domain.domain.queries import (
     GetPlanQuery,
     GetSubscriptionQuery,
     GetUserQuery,
+    ListPlansQuery,
     ListSubscriptionsQuery,
     ListTrafficUsagesQuery,
 )
@@ -26,6 +27,7 @@ class SubscriptionDBRepository(SubscriptionRepository):
         obj = UserORM(
             telegram_id=user.telegram_id,
             chat_id=user.chat_id,
+            username=user.username,
             is_active=user.is_active,
         )
         self._session.add(obj)
@@ -34,9 +36,30 @@ class SubscriptionDBRepository(SubscriptionRepository):
         return User.model_validate(obj)
 
     async def get_user(self, query: GetUserQuery) -> User | None:
-        obj = self._session.get(UserORM, query.user_id)
+        if query.user_id is not None:
+            obj = self._session.get(UserORM, query.user_id)
+        elif query.telegram_id is not None:
+            obj = (
+                self._session.query(UserORM)
+                .filter(UserORM.telegram_id == query.telegram_id)
+                .one_or_none()
+            )
+        else:
+            return None
         if not obj:
             return None
+        return User.model_validate(obj)
+
+    async def update_user(self, user: User) -> User | None:
+        obj = self._session.get(UserORM, user.id)
+        if not obj:
+            return None
+        obj.chat_id = user.chat_id
+        obj.username = user.username
+        obj.is_active = user.is_active
+        self._session.add(obj)
+        self._session.commit()
+        self._session.refresh(obj)
         return User.model_validate(obj)
 
     async def list_users(self) -> list[User]:
@@ -47,8 +70,10 @@ class SubscriptionDBRepository(SubscriptionRepository):
         obj = PlanORM(
             name=plan.name,
             description=plan.description,
+            service_type=plan.service_type,
             duration_days=plan.duration_days,
             traffic_limit_bytes=plan.traffic_limit_bytes,
+            price_toman=plan.price_toman,
             is_active=plan.is_active,
         )
         self._session.add(obj)
@@ -62,14 +87,45 @@ class SubscriptionDBRepository(SubscriptionRepository):
             return None
         return Plan.model_validate(obj)
 
-    async def list_plans(self) -> list[Plan]:
-        rows = self._session.query(PlanORM).all()
+    async def list_plans(self, query: ListPlansQuery | None = None) -> list[Plan]:
+        db_query = self._session.query(PlanORM)
+        if query:
+            if query.service_type is not None:
+                db_query = db_query.filter(PlanORM.service_type == query.service_type)
+            if query.active_only:
+                db_query = db_query.filter(PlanORM.is_active.is_(True))
+        rows = db_query.order_by(PlanORM.price_toman).all()
         return [Plan.model_validate(row) for row in rows]
+
+    async def update_plan(self, plan: Plan) -> Plan | None:
+        obj = self._session.get(PlanORM, plan.id)
+        if not obj:
+            return None
+        obj.name = plan.name
+        obj.description = plan.description
+        obj.service_type = plan.service_type
+        obj.duration_days = plan.duration_days
+        obj.traffic_limit_bytes = plan.traffic_limit_bytes
+        obj.price_toman = plan.price_toman
+        obj.is_active = plan.is_active
+        self._session.add(obj)
+        self._session.commit()
+        self._session.refresh(obj)
+        return Plan.model_validate(obj)
+
+    async def delete_plan(self, plan_id: int) -> bool:
+        obj = self._session.get(PlanORM, plan_id)
+        if not obj:
+            return False
+        self._session.delete(obj)
+        self._session.commit()
+        return True
 
     async def create_subscription(self, subscription: Subscription) -> Subscription:
         obj = SubscriptionORM(
             user_id=subscription.user_id,
             plan_id=subscription.plan_id,
+            service_type=subscription.service_type,
             uuid=subscription.uuid,
             status=subscription.status,
             traffic_limit_bytes=subscription.traffic_limit_bytes,
@@ -103,6 +159,7 @@ class SubscriptionDBRepository(SubscriptionRepository):
         obj.traffic_used_bytes = subscription.traffic_used_bytes
         obj.traffic_limit_bytes = subscription.traffic_limit_bytes
         obj.expire_at = subscription.expire_at
+        obj.plan_id = subscription.plan_id
 
         self._session.add(obj)
         self._session.commit()

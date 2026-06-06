@@ -12,32 +12,7 @@ from vpn_core.subscription_domain.api.v1.dto import (
     GetPlanQueryDTO,
     GetSubscriptionQueryDTO,
     GetUserQueryDTO,
-    ListSubscriptionsQueryDTO,
-    ListTrafficUsagesQueryDTO,
-    PlanListResponseDTO,
-    PlanResponseDTO,
-    SubscriptionListResponseDTO,
-    SubscriptionResponseDTO,
-    TrafficUsageListResponseDTO,
-    TrafficUsageResponseDTO,
-    UpdateSubscriptionStatusDTO,
-    UserListResponseDTO,
-    UserResponseDTO,
-)
-from typing import Annotated
-
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.params import Path
-
-from vpn_core.subscription_domain.api.v1.dependency import SubscriptionServiceDep
-from vpn_core.subscription_domain.api.v1.dto import (
-    CreatePlanDTO,
-    CreateSubscriptionDTO,
-    CreateTrafficUsageDTO,
-    CreateUserDTO,
-    GetPlanQueryDTO,
-    GetSubscriptionQueryDTO,
-    GetUserQueryDTO,
+    ListPlansQueryDTO,
     ListSubscriptionsQueryDTO,
     ListTrafficUsagesQueryDTO,
     PlanListResponseDTO,
@@ -94,8 +69,13 @@ async def create_plan(
 
 
 @router.get("/plans", response_model=PlanListResponseDTO)
-async def list_plans(service: SubscriptionServiceDep) -> PlanListResponseDTO:
-    plans = await service.list_plans()
+async def list_plans(
+    service: SubscriptionServiceDep,
+    service_type: Annotated[str | None, Query()] = None,
+    active_only: Annotated[bool, Query()] = False,
+) -> PlanListResponseDTO:
+    query = ListPlansQueryDTO(service_type=service_type, active_only=active_only).to_domain()
+    plans = await service.list_plans(query)
     return PlanListResponseDTO(plans=plans)
 
 

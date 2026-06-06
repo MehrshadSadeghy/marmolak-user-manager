@@ -1,6 +1,17 @@
 import os
 from functools import lru_cache
 
+from vpn_core.billing_domain.repository.base import BillingRepository
+from vpn_core.billing_domain.repository.sqlalchemy_repository import BillingDBRepository
+from vpn_core.billing_domain.service import BillingService
+from vpn_core.bot_gateway_domain.api.v1.router import admin_router as bot_admin_router
+from vpn_core.bot_gateway_domain.api.v1.router import router as bot_router
+from vpn_core.bot_gateway_domain.service import BotGatewayService
+from vpn_core.billing_domain.api.v1.router import router as billing_admin_router
+from vpn_core.commerce_domain.api.v1.router import router as commerce_admin_router
+from vpn_core.commerce_domain.repository.base import CommerceRepository
+from vpn_core.commerce_domain.repository.sqlalchemy_repository import CommerceDBRepository
+from vpn_core.commerce_domain.service import CommerceService
 from vpn_core.common.db.sqlalchemy_base import Base
 from vpn_core.config import APIConfig, Config, DatabaseConfig
 from vpn_core.core.db.postgres import Postgres
@@ -28,13 +39,18 @@ from vpn_core.strategy.api.v1.router import router as strategy_router
 from vpn_core.strategy.repository.base import StrategyRepository
 from vpn_core.strategy.repository.sqlalchemy_repository import StrategyDBRepository
 from vpn_core.strategy.service import StrategyService
+from vpn_core.subscription_domain.api.v1.admin_router import router as subscription_admin_router
 from vpn_core.subscription_domain.api.v1.router import router as subscription_router
 from vpn_core.subscription_domain.repository.base import SubscriptionRepository
 from vpn_core.subscription_domain.repository.sqlalchemy_repository import (
     SubscriptionDBRepository,
 )
 from vpn_core.subscription_domain.service import SubscriptionService
+from vpn_core.telegram_bot.config import TelegramBotConfig
+from vpn_core.telegram_bot.manager import TelegramBotManager
 
+import vpn_core.billing_domain.db_model  # noqa: F401
+import vpn_core.commerce_domain.db_model  # noqa: F401
 import vpn_core.openvpn_sync.db_model  # noqa: F401
 import vpn_core.server_management_domain.db_model  # noqa: F401
 import vpn_core.subscription_domain.db_model  # noqa: F401
@@ -54,6 +70,10 @@ class AppContainer:
         return self.get_config().api
 
     @singleton
+    def get_subscription_base_url(self) -> str:
+        return os.getenv("SUBSCRIPTION_BASE_URL", "http://localhost:8080")
+
+    @singleton
     def get_api_manager(self) -> APIManager:
         return APIManager(
             api_config=self.get_api_config(),
@@ -61,8 +81,13 @@ class AppContainer:
             routers=[
                 strategy_router,
                 subscription_router,
+                subscription_admin_router,
                 server_router,
                 openvpn_router,
+                bot_router,
+                bot_admin_router,
+                commerce_admin_router,
+                billing_admin_router,
             ],
         )
 
@@ -83,11 +108,26 @@ class AppContainer:
         )
 
     @singleton
+    def get_telegram_bot_config(self) -> TelegramBotConfig | None:
+        return TelegramBotConfig.from_env()
+
+    @singleton
+    def get_telegram_bot_manager(self) -> TelegramBotManager | None:
+        config = self.get_telegram_bot_config()
+        if not config:
+            return None
+        return TelegramBotManager(config)
+
+    @singleton
     def get_managers(self) -> list[Manager]:
-        return [
-            self.get_api_manager(),
+        managers: list[Manager] = [
             self.get_postgres_manager(),
+            self.get_api_manager(),
         ]
+        bot_manager = self.get_telegram_bot_manager()
+        if bot_manager:
+            managers.append(bot_manager)
+        return managers
 
     @singleton
     def get_pg_session(self):
@@ -112,6 +152,24 @@ class AppContainer:
     @singleton
     def get_subscription_service(self) -> SubscriptionService:
         return SubscriptionService(repository=self.get_subscription_repository())
+
+    @singleton
+    def get_commerce_repository(self) -> CommerceRepository:
+        session = next(self.get_pg_session())
+        return CommerceDBRepository(session=session)
+
+    @singleton
+    def get_commerce_service(self) -> CommerceService:
+        return CommerceService(repository=self.get_commerce_repository())
+
+    @singleton
+    def get_billing_repository(self) -> BillingRepository:
+        session = next(self.get_pg_session())
+        return BillingDBRepository(session=session)
+
+    @singleton
+    def get_billing_service(self) -> BillingService:
+        return BillingService(repository=self.get_billing_repository())
 
     @singleton
     def get_server_repository(self) -> ServerRepository:
@@ -146,4 +204,15 @@ class AppContainer:
             traffic_repository=self.get_openvpn_traffic_repository(),
             subscription_repository=self.get_subscription_repository(),
             provisioning_service=self.get_openvpn_provisioning_service(),
+        )
+
+    @singleton
+    def get_bot_gateway_service(self) -> BotGatewayService:
+        return BotGatewayService(
+            subscription_service=self.get_subscription_service(),
+            billing_service=self.get_billing_service(),
+            commerce_service=self.get_commerce_service(),
+            openvpn_service=self.get_openvpn_provisioning_service(),
+            server_service=self.get_server_service(),
+            subscription_base_url=self.get_subscription_base_url(),
         )

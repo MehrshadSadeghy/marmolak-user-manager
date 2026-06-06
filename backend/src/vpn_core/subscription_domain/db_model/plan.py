@@ -13,9 +13,11 @@ class Plan(Base):
 
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    service_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="openvpn")
 
     duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
     traffic_limit_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    price_toman: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

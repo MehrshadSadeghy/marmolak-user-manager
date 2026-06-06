@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from vpn_core.subscription_domain.domain.commands import (
     CreateSubscriptionCommand,
@@ -9,6 +9,7 @@ from vpn_core.subscription_domain.domain.queries import (
     GetPlanQuery,
     GetSubscriptionQuery,
     GetUserQuery,
+    ListPlansQuery,
     ListSubscriptionsQuery,
     ListTrafficUsagesQuery,
 )
@@ -20,12 +21,14 @@ from vpn_core.subscription_domain.domain.user import User
 class CreateUserDTO(BaseModel):
     telegram_id: str
     chat_id: str
+    username: str | None = None
     is_active: bool = True
 
     def to_domain(self) -> User:
         return User(
             telegram_id=self.telegram_id,
             chat_id=self.chat_id,
+            username=self.username,
             is_active=self.is_active,
         )
 
@@ -41,18 +44,52 @@ class UserListResponseDTO(BaseModel):
 class CreatePlanDTO(BaseModel):
     name: str
     description: str = ""
+    service_type: str
     duration_days: int
     traffic_limit_bytes: int
+    price_toman: int = 0
     is_active: bool = True
 
     def to_domain(self) -> Plan:
         return Plan(
             name=self.name,
             description=self.description,
+            service_type=self.service_type,
             duration_days=self.duration_days,
             traffic_limit_bytes=self.traffic_limit_bytes,
+            price_toman=self.price_toman,
             is_active=self.is_active,
         )
+
+
+class UpdatePlanDTO(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    service_type: str | None = None
+    duration_days: int | None = None
+    traffic_limit_bytes: int | None = None
+    price_toman: int | None = None
+    is_active: bool | None = None
+
+    def to_get_query(self, plan_id: int) -> GetPlanQuery:
+        return GetPlanQuery(plan_id=plan_id)
+
+    def apply(self, plan: Plan) -> Plan:
+        if self.name is not None:
+            plan.name = self.name
+        if self.description is not None:
+            plan.description = self.description
+        if self.service_type is not None:
+            plan.service_type = self.service_type
+        if self.duration_days is not None:
+            plan.duration_days = self.duration_days
+        if self.traffic_limit_bytes is not None:
+            plan.traffic_limit_bytes = self.traffic_limit_bytes
+        if self.price_toman is not None:
+            plan.price_toman = self.price_toman
+        if self.is_active is not None:
+            plan.is_active = self.is_active
+        return plan
 
 
 class PlanResponseDTO(BaseModel):
@@ -66,12 +103,14 @@ class PlanListResponseDTO(BaseModel):
 class CreateSubscriptionDTO(BaseModel):
     user_id: int
     plan_id: int
+    service_type: str | None = None
     uuid: str | None = None
 
     def to_domain(self) -> CreateSubscriptionCommand:
         return CreateSubscriptionCommand(
             user_id=self.user_id,
             plan_id=self.plan_id,
+            service_type=self.service_type or "openvpn",
             uuid=self.uuid,
         )
 
@@ -124,10 +163,11 @@ class TrafficUsageListResponseDTO(BaseModel):
 
 
 class GetUserQueryDTO(BaseModel):
-    user_id: int
+    user_id: int | None = None
+    telegram_id: str | None = None
 
     def to_domain(self) -> GetUserQuery:
-        return GetUserQuery(user_id=self.user_id)
+        return GetUserQuery(user_id=self.user_id, telegram_id=self.telegram_id)
 
 
 class GetPlanQueryDTO(BaseModel):
@@ -135,6 +175,14 @@ class GetPlanQueryDTO(BaseModel):
 
     def to_domain(self) -> GetPlanQuery:
         return GetPlanQuery(plan_id=self.plan_id)
+
+
+class ListPlansQueryDTO(BaseModel):
+    service_type: str | None = None
+    active_only: bool = False
+
+    def to_domain(self) -> ListPlansQuery:
+        return ListPlansQuery(service_type=self.service_type, active_only=self.active_only)
 
 
 class GetSubscriptionQueryDTO(BaseModel):
