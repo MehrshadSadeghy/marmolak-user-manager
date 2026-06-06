@@ -1,7 +1,8 @@
 import os
 from functools import lru_cache
 
-from vpn_core.billing_domain.repository.base import BillingRepository
+from sqlalchemy.orm import Session
+
 from vpn_core.billing_domain.repository.sqlalchemy_repository import BillingDBRepository
 from vpn_core.billing_domain.service import BillingService
 from vpn_core.bot_gateway_domain.api.v1.router import admin_router as bot_admin_router
@@ -9,7 +10,6 @@ from vpn_core.bot_gateway_domain.api.v1.router import router as bot_router
 from vpn_core.bot_gateway_domain.service import BotGatewayService
 from vpn_core.billing_domain.api.v1.router import router as billing_admin_router
 from vpn_core.commerce_domain.api.v1.router import router as commerce_admin_router
-from vpn_core.commerce_domain.repository.base import CommerceRepository
 from vpn_core.commerce_domain.repository.sqlalchemy_repository import CommerceDBRepository
 from vpn_core.commerce_domain.service import CommerceService
 from vpn_core.common.db.sqlalchemy_base import Base
@@ -19,10 +19,6 @@ from vpn_core.core.manager.api_manager import APIManager
 from vpn_core.core.manager.base import Manager
 from vpn_core.core.manager.db_manager import PostgresManager
 from vpn_core.openvpn_sync.api.v1.router import router as openvpn_router
-from vpn_core.openvpn_sync.repository.base import (
-    OpenVpnCredentialRepository,
-    OpenVpnTrafficRepository,
-)
 from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
     OpenVpnCredentialDBRepository,
     OpenVpnTrafficDBRepository,
@@ -30,21 +26,14 @@ from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
 from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTrafficService
 from vpn_core.server_management_domain.api.v1.router import router as server_router
-from vpn_core.server_management_domain.repository.base import ServerRepository
-from vpn_core.server_management_domain.repository.sqlalchemy_repository import (
-    ServerDBRepository,
-)
+from vpn_core.server_management_domain.repository.sqlalchemy_repository import ServerDBRepository
 from vpn_core.server_management_domain.service import ServerService
 from vpn_core.strategy.api.v1.router import router as strategy_router
-from vpn_core.strategy.repository.base import StrategyRepository
 from vpn_core.strategy.repository.sqlalchemy_repository import StrategyDBRepository
 from vpn_core.strategy.service import StrategyService
 from vpn_core.subscription_domain.api.v1.admin_router import router as subscription_admin_router
 from vpn_core.subscription_domain.api.v1.router import router as subscription_router
-from vpn_core.subscription_domain.repository.base import SubscriptionRepository
-from vpn_core.subscription_domain.repository.sqlalchemy_repository import (
-    SubscriptionDBRepository,
-)
+from vpn_core.subscription_domain.repository.sqlalchemy_repository import SubscriptionDBRepository
 from vpn_core.subscription_domain.service import SubscriptionService
 from vpn_core.telegram_bot.config import TelegramBotConfig
 from vpn_core.telegram_bot.manager import TelegramBotManager
@@ -104,7 +93,6 @@ class AppContainer:
         return PostgresManager(
             provider=self.get_postgres_provider(),
             base=Base,
-            session_factory=self.get_pg_session,
         )
 
     @singleton
@@ -129,90 +117,45 @@ class AppContainer:
             managers.append(bot_manager)
         return managers
 
-    @singleton
-    def get_pg_session(self):
-        manager = self.get_postgres_manager()
-        return manager.get_session()
+    def create_db_session(self) -> Session:
+        return self.get_postgres_manager().create_session()
 
-    @singleton
-    def get_strategy_repository(self) -> StrategyRepository:
-        session = next(self.get_pg_session())
-        return StrategyDBRepository(session=session)
+    def build_strategy_service(self, session: Session) -> StrategyService:
+        return StrategyService(strategy_repository=StrategyDBRepository(session=session))
 
-    @singleton
-    def get_strategy_service(self) -> StrategyService:
-        repo = self.get_strategy_repository()
-        return StrategyService(strategy_repository=repo)
+    def build_subscription_service(self, session: Session) -> SubscriptionService:
+        return SubscriptionService(repository=SubscriptionDBRepository(session=session))
 
-    @singleton
-    def get_subscription_repository(self) -> SubscriptionRepository:
-        session = next(self.get_pg_session())
-        return SubscriptionDBRepository(session=session)
+    def build_commerce_service(self, session: Session) -> CommerceService:
+        return CommerceService(repository=CommerceDBRepository(session=session))
 
-    @singleton
-    def get_subscription_service(self) -> SubscriptionService:
-        return SubscriptionService(repository=self.get_subscription_repository())
+    def build_billing_service(self, session: Session) -> BillingService:
+        return BillingService(repository=BillingDBRepository(session=session))
 
-    @singleton
-    def get_commerce_repository(self) -> CommerceRepository:
-        session = next(self.get_pg_session())
-        return CommerceDBRepository(session=session)
+    def build_server_service(self, session: Session) -> ServerService:
+        return ServerService(repository=ServerDBRepository(session=session))
 
-    @singleton
-    def get_commerce_service(self) -> CommerceService:
-        return CommerceService(repository=self.get_commerce_repository())
-
-    @singleton
-    def get_billing_repository(self) -> BillingRepository:
-        session = next(self.get_pg_session())
-        return BillingDBRepository(session=session)
-
-    @singleton
-    def get_billing_service(self) -> BillingService:
-        return BillingService(repository=self.get_billing_repository())
-
-    @singleton
-    def get_server_repository(self) -> ServerRepository:
-        session = next(self.get_pg_session())
-        return ServerDBRepository(session=session)
-
-    @singleton
-    def get_server_service(self) -> ServerService:
-        return ServerService(repository=self.get_server_repository())
-
-    @singleton
-    def get_openvpn_credential_repository(self) -> OpenVpnCredentialRepository:
-        session = next(self.get_pg_session())
-        return OpenVpnCredentialDBRepository(session=session)
-
-    @singleton
-    def get_openvpn_traffic_repository(self) -> OpenVpnTrafficRepository:
-        session = next(self.get_pg_session())
-        return OpenVpnTrafficDBRepository(session=session)
-
-    @singleton
-    def get_openvpn_provisioning_service(self) -> OpenVpnProvisioningService:
+    def build_openvpn_provisioning_service(self, session: Session) -> OpenVpnProvisioningService:
         return OpenVpnProvisioningService(
-            server_service=self.get_server_service(),
-            subscription_repository=self.get_subscription_repository(),
-            credential_repository=self.get_openvpn_credential_repository(),
+            server_service=self.build_server_service(session),
+            subscription_repository=SubscriptionDBRepository(session=session),
+            credential_repository=OpenVpnCredentialDBRepository(session=session),
         )
 
-    @singleton
-    def get_openvpn_traffic_service(self) -> OpenVpnTrafficService:
+    def build_openvpn_traffic_service(self, session: Session) -> OpenVpnTrafficService:
+        provisioning_service = self.build_openvpn_provisioning_service(session)
         return OpenVpnTrafficService(
-            traffic_repository=self.get_openvpn_traffic_repository(),
-            subscription_repository=self.get_subscription_repository(),
-            provisioning_service=self.get_openvpn_provisioning_service(),
+            traffic_repository=OpenVpnTrafficDBRepository(session=session),
+            subscription_repository=SubscriptionDBRepository(session=session),
+            provisioning_service=provisioning_service,
         )
 
-    @singleton
-    def get_bot_gateway_service(self) -> BotGatewayService:
+    def build_bot_gateway_service(self, session: Session) -> BotGatewayService:
         return BotGatewayService(
-            subscription_service=self.get_subscription_service(),
-            billing_service=self.get_billing_service(),
-            commerce_service=self.get_commerce_service(),
-            openvpn_service=self.get_openvpn_provisioning_service(),
-            server_service=self.get_server_service(),
+            subscription_service=self.build_subscription_service(session),
+            billing_service=self.build_billing_service(session),
+            commerce_service=self.build_commerce_service(session),
+            openvpn_service=self.build_openvpn_provisioning_service(session),
+            server_service=self.build_server_service(session),
             subscription_base_url=self.get_subscription_base_url(),
         )

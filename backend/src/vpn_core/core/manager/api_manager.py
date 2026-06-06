@@ -40,7 +40,11 @@ class APIManager(Manager):
 
         @self._app.on_event("startup")
         async def seed_commerce_defaults() -> None:
-            await self._container.get_commerce_service().ensure_defaults()
+            session = self._container.create_db_session()
+            try:
+                await self._container.build_commerce_service(session).ensure_defaults()
+            finally:
+                session.close()
 
     async def run(self):
         LOGGER.info("Running 'API Manager'")

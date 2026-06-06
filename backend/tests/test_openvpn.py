@@ -49,6 +49,7 @@ async def test_openvpn_traffic_service_enforces_bandwidth_limit():
         id=1,
         user_id=42,
         plan_id=1,
+        service_type="openvpn",
         uuid="550e8400-e29b-41d4-a716-446655440000",
         status=SubscriptionStatus.active,
         traffic_limit_bytes=1_000,

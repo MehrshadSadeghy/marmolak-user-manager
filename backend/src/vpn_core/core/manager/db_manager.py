@@ -1,9 +1,5 @@
-from typing import Callable
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from sqlalchemy import Engine, func
-from sqlalchemy.orm import Session, DeclarativeBase
-
-from vpn_core.config import DatabaseConfig
 from vpn_core.core.db.base import BaseDatabase
 from vpn_core.core.manager.base import Manager
 
@@ -13,29 +9,26 @@ class PostgresManager(Manager):
         self,
         provider: BaseDatabase,
         base: type[DeclarativeBase],
-        session_factory: Callable,
     ):
         self._provider = provider
-        self._engine = None
-        self._session = session_factory
         self._base = base
+        self._engine = None
+        self._sessionmaker: sessionmaker | None = None
 
     async def setup(self) -> None:
         url = self._provider.create_url()
         self._engine = self._provider.create_engine(url)
-
         self._base.metadata.create_all(bind=self._engine)
-        self._session = self._provider.setup_session(self._engine)
+        self._sessionmaker = self._provider.setup_session(self._engine)
 
     async def run(self) -> None:
         pass
 
     async def teardown(self) -> None:
-        pass
+        if self._engine is not None:
+            self._engine.dispose()
 
-    def get_session(self, ):
-        db = self._session()
-        try:
-            yield db
-        finally:
-            db.close()
+    def create_session(self):
+        if self._sessionmaker is None:
+            raise RuntimeError("PostgresManager is not setup")
+        return self._sessionmaker()
