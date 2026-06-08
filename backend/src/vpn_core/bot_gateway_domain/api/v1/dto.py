@@ -142,6 +142,9 @@ class PaymentApprovalResponseDTO(BaseModel):
     payment_request_id: int
     wallet_balance_toman: int
     purchase: PurchaseResultDTO | None = None
+    user_telegram_id: str
+    user_chat_id: str
+    purpose: str
 
 
 class PendingPaymentsResponseDTO(BaseModel):

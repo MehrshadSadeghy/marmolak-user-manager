@@ -292,6 +292,9 @@ async def approve_payment(
         payment_request_id=result.payment_request_id,
         wallet_balance_toman=result.wallet_balance_toman,
         purchase=purchase,
+        user_telegram_id=result.user_telegram_id,
+        user_chat_id=result.user_chat_id,
+        purpose=result.purpose,
     )
 
 

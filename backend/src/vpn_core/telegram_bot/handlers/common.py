@@ -24,6 +24,21 @@ async def ensure_user(api: UserManagerApiClient, message: Message) -> dict:
 
 
 async def send_delivery(message: Message, delivery: dict) -> None:
+    await send_delivery_to_chat(
+        message.bot,
+        message.chat.id,
+        delivery,
+        reply_markup=buy_now_keyboard(),
+    )
+
+
+async def send_delivery_to_chat(
+    bot,
+    chat_id: str | int,
+    delivery: dict,
+    *,
+    reply_markup=None,
+) -> None:
     if not delivery:
         return
     if delivery["delivery_type"] == "file":
@@ -31,27 +46,29 @@ async def send_delivery(message: Message, delivery: dict) -> None:
             delivery["content"].encode("utf-8"),
             filename=delivery.get("filename") or "config.ovpn",
         )
-        await message.answer_document(
+        config_id = delivery.get("filename", "").removesuffix(".ovpn") or "—"
+        await bot.send_document(
+            chat_id,
             document,
             caption=(
                 "🎉 <b>سرویس شما آماده است!</b>\n\n"
-                f"🆔 کد کانفیگ: <code>{delivery.get('filename', '').removesuffix('.ovpn') or '—'}</code>\n"
+                f"🆔 کد کانفیگ: <code>{config_id}</code>\n"
                 "📂 فایل کانفیگ OpenVPN\n"
-                "⚡ همین الان وارد شو و لذت ببر!\n\n"
-                "💡 سرویس دیگری هم می‌خواهی؟ 👇"
+                "⚡ همین الان وارد شو و لذت ببر!"
             ),
-            reply_markup=buy_now_keyboard(),
+            reply_markup=reply_markup,
             parse_mode="HTML",
         )
     else:
-        await message.answer(
+        await bot.send_message(
+            chat_id,
             "🎉 <b>لینک سرویس V2Ray شما:</b>\n\n"
             f"🔗 <code>{delivery['content']}</code>\n\n"
-            "⚡ لینک را در برنامه V2Ray وارد کن.\n"
-            "💡 سرویس دیگری هم می‌خواهی؟ از منو «خرید سرویس» را بزن!",
-            reply_markup=buy_now_keyboard(),
+            "⚡ لینک را در برنامه V2Ray وارد کن.",
+            reply_markup=reply_markup,
             parse_mode="HTML",
         )
+
 
 ADMIN_FORBIDDEN_MESSAGE = (
     "⛔ دسترسی ادمین ندارید.\n"

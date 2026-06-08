@@ -1,10 +1,15 @@
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
+from vpn_core.billing_domain.domain.payment_request import PaymentPurpose
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
-from vpn_core.telegram_bot.handlers.common import guard_admin_callback, handle_admin_api_error, send_delivery
-from vpn_core.telegram_bot.keyboards.main import admin_menu_keyboard, admin_plans_keyboard, admin_services_keyboard
+from vpn_core.telegram_bot.handlers.common import (
+    guard_admin_callback,
+    handle_admin_api_error,
+    send_delivery_to_chat,
+)
+from vpn_core.telegram_bot.keyboards.main import admin_menu_keyboard, admin_plans_keyboard, admin_services_keyboard, buy_now_keyboard
 from vpn_core.telegram_bot.messages import PURPOSE_FA, format_toman
 
 router = Router()
@@ -125,20 +130,54 @@ async def admin_approve(callback: CallbackQuery, api: UserManagerApiClient, bot_
         raise
     text = (
         f"✅ پرداخت #{payment_id} تأیید شد.\n"
-        f"💰 موجودی: {format_toman(result['wallet_balance_toman'])}"
+        f"👤 کاربر: {result['user_telegram_id']}\n"
+        f"💰 موجودی کاربر: {format_toman(result['wallet_balance_toman'])}"
     )
     purchase = result.get("purchase")
     delivery = purchase.get("delivery") if purchase else None
+    purpose = result.get("purpose")
+    user_chat_id = result["user_chat_id"]
+
     if purchase and not delivery:
         text += (
             "\n\n⚠️ سرویس فعال شد ولی کانفیگ ارسال نشد.\n"
             "احتمالاً سرور OpenVPN تنظیم نشده — از پنل سرورها بررسی کن."
         )
-    if delivery:
+
+    if message.caption is not None:
         await message.edit_caption(text, parse_mode="HTML")
-        await send_delivery(message, delivery)
     else:
-        await message.edit_caption(text, parse_mode="HTML")
+        await message.edit_text(text, parse_mode="HTML")
+
+    if purpose == PaymentPurpose.topup.value:
+        await message.bot.send_message(
+            user_chat_id,
+            "✅ <b>شارژ کیف پول تأیید شد!</b>\n\n"
+            f"💰 موجودی جدید: <b>{format_toman(result['wallet_balance_toman'])}</b>",
+            reply_markup=buy_now_keyboard(),
+            parse_mode="HTML",
+        )
+    elif delivery:
+        await message.bot.send_message(
+            user_chat_id,
+            "✅ <b>پرداخت شما تأیید شد!</b>\n\n"
+            "📩 فایل کانفیگ در پیام بعدی ارسال می‌شود.",
+            parse_mode="HTML",
+        )
+        await send_delivery_to_chat(
+            message.bot,
+            user_chat_id,
+            delivery,
+            reply_markup=buy_now_keyboard(),
+        )
+    elif purchase:
+        await message.bot.send_message(
+            user_chat_id,
+            "✅ <b>پرداخت شما تأیید شد و سرویس فعال شد!</b>",
+            reply_markup=buy_now_keyboard(),
+            parse_mode="HTML",
+        )
+
     await callback.answer("✅ تأیید شد")
 
 

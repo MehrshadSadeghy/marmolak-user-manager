@@ -93,6 +93,9 @@ class PaymentApprovalResult:
     payment_request_id: int
     wallet_balance_toman: int
     purchase: PurchaseResult | None
+    user_telegram_id: str
+    user_chat_id: str
+    purpose: str
 
 
 class BotGatewayService:
@@ -264,28 +267,31 @@ class BotGatewayService:
         if request.status == PaymentRequestStatus.approved:
             purchase_result = await self._finish_approved_payment(request)
             await self._billing_service.mark_payment_completed(payment_request_id)
-            wallet = await self._billing_service.get_wallet(request.user_id)
-            return PaymentApprovalResult(
+            return await self._build_payment_approval_result(
                 payment_request_id=payment_request_id,
-                wallet_balance_toman=wallet.balance_toman,
+                user_id=request.user_id,
                 purchase=purchase_result,
+                purpose=request.purpose,
             )
 
         if request.status != PaymentRequestStatus.pending_approval:
             raise HTTPException(status_code=400, detail="Payment request is not pending approval")
 
-        await self._billing_service.credit_wallet(
-            CreditWalletCommand(
-                user_id=request.user_id,
-                amount_toman=request.amount_toman,
-                description=f"Payment #{payment_request_id} approved",
-                reference_type="payment_request",
-                reference_id=payment_request_id,
-            )
-        )
-
+        purchase_result: PurchaseResult | None = None
         try:
-            purchase_result = await self._execute_payment_purpose(request)
+            if request.purpose == PaymentPurpose.topup:
+                await self._billing_service.credit_wallet(
+                    CreditWalletCommand(
+                        user_id=request.user_id,
+                        amount_toman=request.amount_toman,
+                        description=f"Payment #{payment_request_id} approved",
+                        reference_type="payment_request",
+                        reference_id=payment_request_id,
+                    )
+                )
+            else:
+                purchase_result = await self._fulfill_manual_payment(request)
+
             await self._billing_service.review_payment_request(
                 ReviewPaymentRequestCommand(
                     payment_request_id=payment_request_id,
@@ -296,27 +302,52 @@ class BotGatewayService:
             )
             await self._billing_service.mark_payment_completed(payment_request_id)
         except HTTPException:
-            await self._billing_service.debit_wallet(
-                DebitWalletCommand(
-                    user_id=request.user_id,
-                    amount_toman=request.amount_toman,
-                    description=f"Rollback payment #{payment_request_id} approval",
-                    reference_type="payment_request",
-                    reference_id=payment_request_id,
+            if request.purpose == PaymentPurpose.topup:
+                await self._billing_service.debit_wallet(
+                    DebitWalletCommand(
+                        user_id=request.user_id,
+                        amount_toman=request.amount_toman,
+                        description=f"Rollback payment #{payment_request_id} approval",
+                        reference_type="payment_request",
+                        reference_id=payment_request_id,
+                    )
                 )
-            )
             raise
 
-        wallet = await self._billing_service.get_wallet(request.user_id)
+        return await self._build_payment_approval_result(
+            payment_request_id=payment_request_id,
+            user_id=request.user_id,
+            purchase=purchase_result,
+            purpose=request.purpose,
+        )
+
+    async def _build_payment_approval_result(
+        self,
+        *,
+        payment_request_id: int,
+        user_id: int,
+        purchase: PurchaseResult | None,
+        purpose: PaymentPurpose,
+    ) -> PaymentApprovalResult:
+        user = await self._subscription_service.get_user(GetUserQuery(user_id=user_id))
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        wallet = await self._billing_service.get_wallet(user_id)
         return PaymentApprovalResult(
             payment_request_id=payment_request_id,
             wallet_balance_toman=wallet.balance_toman,
-            purchase=purchase_result,
+            purchase=purchase,
+            user_telegram_id=user.telegram_id,
+            user_chat_id=user.chat_id,
+            purpose=purpose.value,
         )
 
     async def _finish_approved_payment(self, request) -> PurchaseResult | None:
         if request.purpose == PaymentPurpose.topup:
             return None
+        return await self._fulfill_manual_payment(request)
+
+    async def _fulfill_manual_payment(self, request) -> PurchaseResult | None:
         if request.purpose == PaymentPurpose.purchase:
             if request.plan_id is None:
                 raise HTTPException(status_code=400, detail="Payment request missing plan")
@@ -331,31 +362,58 @@ class BotGatewayService:
                     payment_request_id=request.id,
                     delivery=delivery,
                 )
-            return await self._fulfill_purchase_from_wallet(request.user_id, request.plan_id)
-        if request.purpose == PaymentPurpose.renewal:
-            if request.subscription_id is None or request.plan_id is None:
-                raise HTTPException(status_code=400, detail="Payment request missing renewal data")
-            return await self._fulfill_renewal_from_wallet(
-                request.user_id,
-                request.subscription_id,
-                request.plan_id,
+            plan = await self._get_active_plan(request.plan_id)
+            if request.amount_toman < plan.price_toman:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Approved payment amount is less than plan price. "
+                        "Ask the user to pay the difference or update the plan price."
+                    ),
+                )
+            subscription = await self._create_subscription(request.user_id, plan)
+            delivery = await self._try_deliver(subscription)
+            wallet = await self._billing_service.get_wallet(request.user_id)
+            return PurchaseResult(
+                subscription=subscription,
+                wallet_balance_toman=wallet.balance_toman,
+                paid_from_wallet=False,
+                payment_request_id=request.id,
+                delivery=delivery,
             )
-        return None
-
-    async def _execute_payment_purpose(self, request) -> PurchaseResult | None:
-        if request.purpose == PaymentPurpose.topup:
-            return None
-        if request.purpose == PaymentPurpose.purchase:
-            if request.plan_id is None:
-                raise HTTPException(status_code=400, detail="Payment request missing plan")
-            return await self._fulfill_purchase_from_wallet(request.user_id, request.plan_id)
         if request.purpose == PaymentPurpose.renewal:
             if request.subscription_id is None or request.plan_id is None:
                 raise HTTPException(status_code=400, detail="Payment request missing renewal data")
-            return await self._fulfill_renewal_from_wallet(
-                request.user_id,
-                request.subscription_id,
-                request.plan_id,
+            subscription = await self._subscription_service.get_subscription(
+                GetSubscriptionQuery(subscription_id=request.subscription_id)
+            )
+            if not subscription or subscription.user_id != request.user_id:
+                raise HTTPException(status_code=404, detail="Subscription not found")
+            plan = await self._get_active_plan(request.plan_id)
+            if request.amount_toman < plan.price_toman:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Approved payment amount is less than plan price. "
+                        "Ask the user to pay the difference or update the plan price."
+                    ),
+                )
+            renewed = await self._subscription_service.renew_subscription(
+                RenewSubscriptionCommand(
+                    subscription_id=request.subscription_id,
+                    plan_id=request.plan_id,
+                )
+            )
+            if not renewed:
+                raise HTTPException(status_code=400, detail="Could not renew subscription")
+            delivery = await self._try_deliver(renewed)
+            wallet = await self._billing_service.get_wallet(request.user_id)
+            return PurchaseResult(
+                subscription=renewed,
+                wallet_balance_toman=wallet.balance_toman,
+                paid_from_wallet=False,
+                payment_request_id=request.id,
+                delivery=delivery,
             )
         return None
 
