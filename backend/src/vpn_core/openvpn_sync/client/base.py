@@ -17,3 +17,8 @@ class OpenVpnClient(ABC):
     @abstractmethod
     async def delete_user(self, server: Server, common_name: str) -> None:
         pass
+
+    @abstractmethod
+    async def apply_endpoint(self, server: Server, *, port: int, proto: str) -> dict:
+        """Apply OpenVPN listen port/protocol on the node host."""
+        pass

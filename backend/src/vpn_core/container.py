@@ -23,6 +23,7 @@ from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
     OpenVpnCredentialDBRepository,
     OpenVpnTrafficDBRepository,
 )
+from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
 from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTrafficService
 from vpn_core.server_management_domain.api.v1.router import router as server_router
@@ -150,12 +151,16 @@ class AppContainer:
             provisioning_service=provisioning_service,
         )
 
+    def build_openvpn_endpoint_service(self, session: Session) -> OpenVpnEndpointService:
+        return OpenVpnEndpointService(server_service=self.build_server_service(session))
+
     def build_bot_gateway_service(self, session: Session) -> BotGatewayService:
         return BotGatewayService(
             subscription_service=self.build_subscription_service(session),
             billing_service=self.build_billing_service(session),
             commerce_service=self.build_commerce_service(session),
             openvpn_service=self.build_openvpn_provisioning_service(session),
+            openvpn_endpoint_service=self.build_openvpn_endpoint_service(session),
             server_service=self.build_server_service(session),
             subscription_base_url=self.get_subscription_base_url(),
         )

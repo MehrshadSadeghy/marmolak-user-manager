@@ -92,6 +92,7 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📋 پلن‌ها", callback_data="admin:plans")],
             [InlineKeyboardButton(text="💳 روش‌های پرداخت", callback_data="admin:payment-methods")],
             [InlineKeyboardButton(text="📊 گزارش مالی", callback_data="admin:report")],
+            [InlineKeyboardButton(text="🔌 OpenVPN پورت/پروتکل", callback_data="admin:openvpn-endpoint")],
             [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="menu:home")],
         ]
     )
@@ -201,5 +202,47 @@ def admin_report_keyboard() -> InlineKeyboardMarkup:
             ],
             [InlineKeyboardButton(text="🗓 ماهانه", callback_data="admin:report:monthly")],
             [InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:admin")],
+        ]
+    )
+
+
+def admin_openvpn_servers_keyboard(servers: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for server in servers:
+        label = (
+            f"{server['name']} — {server['vpn_proto'].upper()}/{server['vpn_port']} "
+            f"({server['status']})"
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=f"admin:ovpn:server:{server['id']}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:admin")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_openvpn_proto_keyboard(server_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="UDP", callback_data=f"admin:ovpn:proto:{server_id}:udp"),
+                InlineKeyboardButton(text="TCP", callback_data=f"admin:ovpn:proto:{server_id}:tcp"),
+            ],
+            [InlineKeyboardButton(text="◀️ بازگشت", callback_data="admin:openvpn-endpoint")],
+        ]
+    )
+
+
+def admin_openvpn_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ تأیید و اعمال", callback_data="admin:ovpn:confirm"),
+                InlineKeyboardButton(text="❌ لغو", callback_data="admin:ovpn:cancel"),
+            ]
         ]
     )

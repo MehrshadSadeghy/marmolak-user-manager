@@ -1,6 +1,6 @@
 from aiogram import Dispatcher
 
-from vpn_core.telegram_bot.handlers import admin, admin_catalog, menu, payments, purchase, services, support, wallet
+from vpn_core.telegram_bot.handlers import admin, admin_catalog, admin_servers, menu, payments, purchase, services, support, wallet
 
 
 def register_handlers(dispatcher: Dispatcher) -> None:
@@ -12,3 +12,4 @@ def register_handlers(dispatcher: Dispatcher) -> None:
     dispatcher.include_router(payments.router)
     dispatcher.include_router(admin.router)
     dispatcher.include_router(admin_catalog.router)
+    dispatcher.include_router(admin_servers.router)

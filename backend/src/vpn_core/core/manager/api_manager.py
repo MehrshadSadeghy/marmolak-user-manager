@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -52,11 +53,15 @@ class APIManager(Manager):
         if self._app is None:
             raise ValueError("APIManager is not setup")
 
+        access_log = os.getenv("UVICORN_ACCESS_LOG", "0").lower() in ("1", "true", "yes")
+        log_level = os.getenv("LOG_LEVEL", "info").lower()
         self._uvicorn_server = uvicorn.Server(
             config=uvicorn.Config(
                 app=self._app,
                 host=self._config.host,
                 port=self._config.port,
+                log_level=log_level,
+                access_log=access_log,
             )
         )
         await self._uvicorn_server.serve()

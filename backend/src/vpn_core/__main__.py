@@ -1,8 +1,10 @@
 import asyncio
 import logging
 
+from vpn_core.common.logging_config import configure_logging
 from vpn_core.container import AppContainer
 
+configure_logging()
 LOGGER = logging.getLogger(__name__)
 
 

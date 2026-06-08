@@ -5,6 +5,20 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    command:
+      [
+        "postgres",
+        "-c",
+        "log_statement=none",
+        "-c",
+        "log_min_messages=error",
+        "-c",
+        "log_connections=off",
+        "-c",
+        "log_disconnections=off",
+      ]
+    logging:
+      driver: "none"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-user_manager_db}
       POSTGRES_USER: ${POSTGRES_USER:-user_manager_user}
@@ -43,6 +57,8 @@ services:
       ADMIN_CHAT_IDS: ${ADMIN_CHAT_IDS:-}
       SUPER_ADMIN_CHAT_IDS: ${SUPER_ADMIN_CHAT_IDS:-}
       USER_MANAGER_API_URL: http://api:8080
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      UVICORN_ACCESS_LOG: ${UVICORN_ACCESS_LOG:-0}
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:

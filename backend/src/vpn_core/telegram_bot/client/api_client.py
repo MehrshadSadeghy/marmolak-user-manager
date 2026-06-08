@@ -24,7 +24,8 @@ class UserManagerApiClient:
         admin_telegram_id: str | None = None,
     ) -> Any:
         headers = self._admin_headers(admin_telegram_id) if admin_telegram_id else self._headers
-        async with httpx.AsyncClient(headers=headers, timeout=60) as client:
+        timeout = 120.0 if path.endswith("/openvpn-endpoint") else 60.0
+        async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
             response = await client.request(method, f"{self._base_url}{path}", json=json)
             response.raise_for_status()
             if response.content:
@@ -211,3 +212,25 @@ class UserManagerApiClient:
             admin_telegram_id=admin_telegram_id,
         )
         return data["report"]
+
+    async def list_openvpn_servers_admin(self, admin_telegram_id: str) -> list[dict]:
+        data = await self._request(
+            "GET",
+            "/api/v1/admin/bot/servers/openvpn",
+            admin_telegram_id=admin_telegram_id,
+        )
+        return data["servers"]
+
+    async def apply_openvpn_endpoint_admin(
+        self,
+        admin_telegram_id: str,
+        server_id: int,
+        port: int,
+        proto: str,
+    ) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/admin/bot/servers/{server_id}/openvpn-endpoint",
+            json={"port": port, "proto": proto},
+            admin_telegram_id=admin_telegram_id,
+        )

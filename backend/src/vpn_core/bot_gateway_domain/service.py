@@ -18,6 +18,7 @@ from vpn_core.billing_domain.domain.queries import ListPaymentRequestsQuery
 from vpn_core.billing_domain.service import BillingService
 from vpn_core.commerce_domain.service import CommerceService
 from vpn_core.openvpn_sync.domain.commands import ProvisionOpenVpnCommand
+from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
 from vpn_core.server_management_domain.domain.queries import ListServersQuery
 from vpn_core.server_management_domain.service import ServerService
@@ -90,6 +91,7 @@ class BotGatewayService:
         billing_service: BillingService,
         commerce_service: CommerceService,
         openvpn_service: OpenVpnProvisioningService,
+        openvpn_endpoint_service: OpenVpnEndpointService,
         server_service: ServerService,
         subscription_base_url: str,
     ):
@@ -97,6 +99,7 @@ class BotGatewayService:
         self._billing_service = billing_service
         self._commerce_service = commerce_service
         self._openvpn_service = openvpn_service
+        self._openvpn_endpoint_service = openvpn_endpoint_service
         self._server_service = server_service
         self._subscription_base_url = subscription_base_url.rstrip("/")
 
@@ -586,3 +589,9 @@ class BotGatewayService:
         if num_bytes >= 1024**2:
             return f"{num_bytes / 1024**2:.2f} MB"
         return f"{num_bytes} B"
+
+    async def list_openvpn_servers(self):
+        return await self._openvpn_endpoint_service.list_openvpn_servers()
+
+    async def apply_openvpn_endpoint(self, server_id: int, port: int, proto: str) -> dict:
+        return await self._openvpn_endpoint_service.apply_endpoint(server_id, port, proto)

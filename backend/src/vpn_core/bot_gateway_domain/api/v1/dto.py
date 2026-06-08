@@ -130,3 +130,35 @@ class PaymentApprovalResponseDTO(BaseModel):
 
 class PendingPaymentsResponseDTO(BaseModel):
     payments: list[PaymentRequest]
+
+
+class AdminOpenVpnServerSummaryDTO(BaseModel):
+    id: int
+    name: str
+    vpn_host: str
+    vpn_port: int
+    vpn_proto: str
+    status: str
+
+
+class AdminOpenVpnServerListResponseDTO(BaseModel):
+    servers: list[AdminOpenVpnServerSummaryDTO]
+
+
+class ApplyOpenVpnEndpointDTO(BaseModel):
+    port: int = Field(..., ge=1, le=65535)
+    proto: str = Field(..., min_length=3, max_length=3)
+
+
+class ApplyOpenVpnEndpointResponseDTO(BaseModel):
+    server_id: int
+    server_name: str
+    port: int
+    proto: str
+    previous_port: int
+    previous_proto: str
+    openvpn_running: bool
+    server_conf_updated: bool
+    firewall_rule_added: bool
+    env_file_updated: bool
+    message: str

@@ -5,6 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from vpn_core.bot_gateway_domain.api.v1.dependency import BotGatewayServiceDep
 from vpn_core.bot_gateway_domain.api.v1.dto import (
     AdminPaymentReviewDTO,
+    AdminOpenVpnServerListResponseDTO,
+    AdminOpenVpnServerSummaryDTO,
+    ApplyOpenVpnEndpointDTO,
+    ApplyOpenVpnEndpointResponseDTO,
     InitiatePaymentDTO,
     PaymentApprovalResponseDTO,
     PaymentMethodListResponseDTO,
@@ -265,6 +269,59 @@ async def approve_payment(
         payment_request_id=result.payment_request_id,
         wallet_balance_toman=result.wallet_balance_toman,
         purchase=purchase,
+    )
+
+
+@admin_router.get("/servers/openvpn", response_model=AdminOpenVpnServerListResponseDTO)
+async def list_openvpn_servers(service: BotGatewayServiceDep) -> AdminOpenVpnServerListResponseDTO:
+    servers = await service.list_openvpn_servers()
+    return AdminOpenVpnServerListResponseDTO(
+        servers=[
+            AdminOpenVpnServerSummaryDTO(
+                id=server.id,
+                name=server.name,
+                vpn_host=server.openvpn.vpn_host or server.connection.host,
+                vpn_port=server.openvpn.vpn_port,
+                vpn_proto=server.openvpn.vpn_proto,
+                status=server.status.value,
+            )
+            for server in servers
+            if server.id is not None
+        ]
+    )
+
+
+@admin_router.post(
+    "/servers/{server_id}/openvpn-endpoint",
+    response_model=ApplyOpenVpnEndpointResponseDTO,
+)
+async def apply_openvpn_endpoint(
+    server_id: Annotated[int, Path()],
+    body: ApplyOpenVpnEndpointDTO,
+    service: BotGatewayServiceDep,
+) -> ApplyOpenVpnEndpointResponseDTO:
+    proto = body.proto.lower()
+    if proto not in ("udp", "tcp"):
+        raise HTTPException(status_code=400, detail="proto must be udp or tcp")
+    result = await service.apply_openvpn_endpoint(server_id, body.port, proto)
+    running = result.get("openvpn_running", False)
+    message = (
+        f"OpenVPN endpoint updated to {proto.upper()}/{result['port']}."
+        if running
+        else f"Settings saved but OpenVPN service is not running on {proto.upper()}/{result['port']}."
+    )
+    return ApplyOpenVpnEndpointResponseDTO(
+        server_id=result["server_id"],
+        server_name=result["server_name"],
+        port=result["port"],
+        proto=result["proto"],
+        previous_port=result["previous_port"],
+        previous_proto=result["previous_proto"],
+        openvpn_running=running,
+        server_conf_updated=result.get("server_conf_updated", False),
+        firewall_rule_added=result.get("firewall_rule_added", False),
+        env_file_updated=result.get("env_file_updated", False),
+        message=message,
     )
 
 

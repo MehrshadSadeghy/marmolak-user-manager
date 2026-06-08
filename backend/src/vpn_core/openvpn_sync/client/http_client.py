@@ -16,8 +16,9 @@ LOGGER = logging.getLogger(__name__)
 class HttpOpenVpnClient(OpenVpnClient):
     """Calls vpn-node HTTP API with HMAC signing."""
 
-    def __init__(self, timeout: float = 30.0):
+    def __init__(self, timeout: float = 30.0, endpoint_timeout: float = 120.0):
         self._timeout = timeout
+        self._endpoint_timeout = endpoint_timeout
 
     def _node_base_url(self, server: Server) -> str:
         host = server.connection.host
@@ -51,8 +52,17 @@ class HttpOpenVpnClient(OpenVpnClient):
             "X-Node-Signature": signature,
         }
         url = f"{self._node_base_url(server)}{path}"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        timeout = self._endpoint_timeout if path.endswith("/apply-endpoint") else self._timeout
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.request(method, url, content=body, headers=headers)
+            if response.is_error:
+                LOGGER.error(
+                    "OpenVPN node request failed %s %s -> %s: %s",
+                    method,
+                    url,
+                    response.status_code,
+                    response.text,
+                )
             response.raise_for_status()
             return response.json()
 
@@ -96,4 +106,12 @@ class HttpOpenVpnClient(OpenVpnClient):
             "POST",
             "/node/vpn/openvpn/delete",
             {"common_name": common_name},
+        )
+
+    async def apply_endpoint(self, server: Server, *, port: int, proto: str) -> dict:
+        return await self._request(
+            server,
+            "POST",
+            "/node/vpn/openvpn/apply-endpoint",
+            {"port": port, "proto": proto},
         )
