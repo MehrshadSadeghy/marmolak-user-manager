@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminUserListItemDTO(BaseModel):
@@ -22,6 +22,8 @@ class PaginatedUsersResponseDTO(BaseModel):
 
 
 class CollaboratorDiscountRuleDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int | None = None
     user_id: int
     service_type: str

@@ -29,10 +29,7 @@ def _user_list_item_dto(item) -> AdminUserListItemDTO:
 
 
 def _user_detail_dto(detail) -> AdminUserDetailDTO:
-    return AdminUserDetailDTO(
-        **detail.model_dump(exclude={"discount_rules"}),
-        discount_rules=[CollaboratorDiscountRuleDTO.model_validate(rule) for rule in detail.discount_rules],
-    )
+    return AdminUserDetailDTO.model_validate(detail.model_dump())
 
 
 def _config_item_dto(item) -> AdminUserConfigItemDTO:
