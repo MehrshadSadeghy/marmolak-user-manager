@@ -26,6 +26,7 @@ def _credential_from_orm(obj: OpenVpnClientCredentialORM) -> OpenVpnClientCreden
         status=OpenVpnConfigStatus(obj.status),
         created_at=obj.created_at,
         revoked_at=obj.revoked_at,
+        last_status_bytes=obj.last_status_bytes,
     )
 
 
@@ -46,6 +47,7 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
             existing.ovpn_content = credential.ovpn_content
             existing.status = credential.status.value
             existing.subscription_id = credential.subscription_id
+            existing.last_status_bytes = credential.last_status_bytes
             obj = existing
         else:
             obj = OpenVpnClientCredentialORM(
@@ -57,6 +59,7 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
                 slot_index=credential.slot_index,
                 ovpn_content=credential.ovpn_content,
                 status=credential.status.value,
+                last_status_bytes=credential.last_status_bytes,
             )
             self._session.add(obj)
         self._session.commit()
@@ -150,6 +153,30 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
         obj.status = status.value
         if status == OpenVpnConfigStatus.revoked:
             obj.revoked_at = datetime.now(UTC)
+        self._session.commit()
+        self._session.refresh(obj)
+        return _credential_from_orm(obj)
+
+    async def list_active_with_subscription(self) -> list[OpenVpnClientCredential]:
+        rows = (
+            self._session.query(OpenVpnClientCredentialORM)
+            .filter(
+                OpenVpnClientCredentialORM.status == OpenVpnConfigStatus.active.value,
+                OpenVpnClientCredentialORM.subscription_id.isnot(None),
+            )
+            .all()
+        )
+        return [_credential_from_orm(row) for row in rows]
+
+    async def update_last_status_bytes(
+        self,
+        credential_id: int,
+        last_status_bytes: int,
+    ) -> OpenVpnClientCredential | None:
+        obj = self._session.get(OpenVpnClientCredentialORM, credential_id)
+        if not obj:
+            return None
+        obj.last_status_bytes = max(last_status_bytes, 0)
         self._session.commit()
         self._session.refresh(obj)
         return _credential_from_orm(obj)

@@ -59,7 +59,11 @@ class OpenVpnTrafficService:
             subscription.status = SubscriptionStatus.traffic_exceeded
             await self._subscription_repository.update_subscription(subscription)
             await self._provisioning_service.deactivate(
-                DeactivateOpenVpnCommand(user_id=subscription.user_id, reason="bandwidth_limit")
+                DeactivateOpenVpnCommand(
+                    user_id=subscription.user_id,
+                    subscription_id=subscription_id,
+                    reason="bandwidth_limit",
+                )
             )
             LOGGER.info(
                 "Deactivated OpenVPN for user %s due to bandwidth limit",

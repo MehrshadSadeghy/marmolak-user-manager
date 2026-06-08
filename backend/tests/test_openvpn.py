@@ -76,7 +76,7 @@ async def test_openvpn_traffic_service_enforces_bandwidth_limit():
     assert subscription.status == SubscriptionStatus.traffic_exceeded
     subscription_repository.update_subscription.assert_awaited_once_with(subscription)
     provisioning_service.deactivate.assert_awaited_once_with(
-        DeactivateOpenVpnCommand(user_id=42, reason="bandwidth_limit")
+        DeactivateOpenVpnCommand(user_id=42, subscription_id=1, reason="bandwidth_limit")
     )
 
 

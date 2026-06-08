@@ -22,3 +22,8 @@ class OpenVpnClient(ABC):
     async def apply_endpoint(self, server: Server, *, port: int, proto: str) -> dict:
         """Apply OpenVPN listen port/protocol on the node host."""
         pass
+
+    @abstractmethod
+    async def fetch_client_traffic(self, server: Server) -> dict[str, int]:
+        """Return current session bytes (received + sent) keyed by common_name."""
+        pass

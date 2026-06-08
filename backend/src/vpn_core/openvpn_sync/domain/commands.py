@@ -12,6 +12,7 @@ class ProvisionOpenVpnCommand(BaseModel):
 
 class DeactivateOpenVpnCommand(BaseModel):
     user_id: int
+    subscription_id: int | None = None
     reason: str = "manual"
 
 

@@ -17,6 +17,7 @@ from vpn_core.config import APIConfig, Config, DatabaseConfig
 from vpn_core.core.db.postgres import Postgres
 from vpn_core.core.manager.api_manager import APIManager
 from vpn_core.core.manager.base import Manager
+from vpn_core.core.manager.traffic_enforcement_manager import TrafficEnforcementManager
 from vpn_core.core.manager.db_manager import PostgresManager
 from vpn_core.openvpn_sync.api.v1.router import router as openvpn_router
 from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
@@ -25,6 +26,10 @@ from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
 )
 from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
+from vpn_core.openvpn_sync.client.factory import OpenVpnClientFactory
+from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
+    OpenVpnTrafficEnforcementService,
+)
 from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTrafficService
 from vpn_core.server_management_domain.api.v1.router import router as server_router
 from vpn_core.server_management_domain.repository.sqlalchemy_repository import ServerDBRepository
@@ -113,10 +118,15 @@ class AppContainer:
         return TelegramBotManager(config)
 
     @singleton
+    def get_traffic_enforcement_manager(self) -> TrafficEnforcementManager:
+        return TrafficEnforcementManager(container=self)
+
+    @singleton
     def get_managers(self) -> list[Manager]:
         managers: list[Manager] = [
             self.get_postgres_manager(),
             self.get_api_manager(),
+            self.get_traffic_enforcement_manager(),
         ]
         bot_manager = self.get_telegram_bot_manager()
         if bot_manager:
@@ -166,6 +176,15 @@ class AppContainer:
             credential_repository=OpenVpnCredentialDBRepository(session=session),
             openvpn_service=self.build_openvpn_provisioning_service(session),
             server_service=self.build_server_service(session),
+        )
+
+    def build_openvpn_traffic_enforcement_service(self, session: Session) -> OpenVpnTrafficEnforcementService:
+        return OpenVpnTrafficEnforcementService(
+            subscription_repository=SubscriptionDBRepository(session=session),
+            credential_repository=OpenVpnCredentialDBRepository(session=session),
+            provisioning_service=self.build_openvpn_provisioning_service(session),
+            server_service=self.build_server_service(session),
+            openvpn_client=OpenVpnClientFactory.create(),
         )
 
     def build_bot_gateway_service(self, session: Session) -> BotGatewayService:

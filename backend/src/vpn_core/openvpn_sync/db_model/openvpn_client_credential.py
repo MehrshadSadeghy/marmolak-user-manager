@@ -22,6 +22,7 @@ class OpenVpnClientCredentialORM(Base):
     slot_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     ovpn_content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    last_status_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

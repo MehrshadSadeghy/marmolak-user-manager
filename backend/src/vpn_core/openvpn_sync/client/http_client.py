@@ -115,3 +115,12 @@ class HttpOpenVpnClient(OpenVpnClient):
             "/node/vpn/openvpn/apply-endpoint",
             {"port": port, "proto": proto},
         )
+
+    async def fetch_client_traffic(self, server: Server) -> dict[str, int]:
+        data = await self._request(server, "GET", "/node/vpn/openvpn/traffic")
+        clients = data.get("clients") or []
+        return {
+            str(item["common_name"]): int(item["bytes_total"])
+            for item in clients
+            if item.get("common_name") is not None
+        }

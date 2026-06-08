@@ -23,5 +23,6 @@ class OpenVpnClientCredential(BaseModel):
     slot_index: int = 0
     ovpn_content: str
     status: OpenVpnConfigStatus = OpenVpnConfigStatus.active
+    last_status_bytes: int = 0
     created_at: datetime | None = None
     revoked_at: datetime | None = None

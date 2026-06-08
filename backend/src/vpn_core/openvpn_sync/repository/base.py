@@ -62,6 +62,18 @@ class OpenVpnCredentialRepository(ABC):
     ) -> OpenVpnClientCredential | None:
         pass
 
+    @abstractmethod
+    async def list_active_with_subscription(self) -> list[OpenVpnClientCredential]:
+        pass
+
+    @abstractmethod
+    async def update_last_status_bytes(
+        self,
+        credential_id: int,
+        last_status_bytes: int,
+    ) -> OpenVpnClientCredential | None:
+        pass
+
 
 class OpenVpnTrafficRepository(ABC):
     @abstractmethod

@@ -180,6 +180,8 @@ class OpenVpnProvisioningService:
         configs = await self._credential_repository.list_by_user(
             command.user_id, status=OpenVpnConfigStatus.active
         )
+        if command.subscription_id is not None:
+            configs = [cfg for cfg in configs if cfg.subscription_id == command.subscription_id]
         revoked = 0
         for cfg in configs:
             server = await self._server_service.get_server(GetServerQuery(server_id=cfg.server_id))

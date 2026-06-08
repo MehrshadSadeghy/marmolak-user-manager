@@ -56,6 +56,19 @@ class PostgresManager(Manager):
                             text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
                         )
 
+            if "openvpn_client_credentials" in table_names:
+                credential_columns = {
+                    column["name"]
+                    for column in inspector.get_columns("openvpn_client_credentials")
+                }
+                if "last_status_bytes" not in credential_columns:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE openvpn_client_credentials "
+                            "ADD COLUMN last_status_bytes BIGINT NOT NULL DEFAULT 0"
+                        )
+                    )
+
     async def run(self) -> None:
         pass
 
