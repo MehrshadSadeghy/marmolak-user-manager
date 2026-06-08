@@ -101,11 +101,11 @@ async def select_plan(callback: CallbackQuery, api: UserManagerApiClient) -> Non
             )
         else:
             await message.edit_text(
-                "💳 <b>موجودی کافی نیست — ولی نگران نباش!</b>\n\n"
-                f"💰 مبلغ مورد نیاز: <b>{format_toman(preview['price_toman'])}</b>\n"
+                "💳 <b>موجودی کافی نیست</b>\n\n"
+                f"💰 مبلغ پلن: <b>{format_toman(preview['price_toman'])}</b>\n"
                 f"👛 موجودی فعلی: <b>{format_toman(preview['wallet_balance_toman'])}</b>\n"
                 f"📉 کسری: <b>{format_toman(preview['shortfall_toman'])}</b>\n\n"
-                "👇 روش پرداخت را انتخاب کن و همین الان سرویس بگیر:",
+                "👇 ابتدا کیف پول را شارژ کن. بعد از تأیید ادمین، دوباره همین پلن را بخر.",
                 reply_markup=payment_methods_keyboard(methods, prefix=f"buy:{plan_id}"),
                 parse_mode="HTML",
             )
@@ -134,12 +134,13 @@ async def buy_with_payment(callback: CallbackQuery, api: UserManagerApiClient) -
     support = await api.get_support()
     instructions = support.get("payment_instructions") or ""
     await message.edit_text(
-        "💸 <b>درخواست پرداخت ثبت شد</b>\n\n"
+        "💸 <b>درخواست شارژ کیف پول ثبت شد</b>\n\n"
         f"💰 مبلغ: <b>{format_toman(payment['payment_request']['amount_toman'])}</b>\n\n"
         f"{format_payment_method_display(method)}\n\n"
         f"{instructions}\n\n"
         "📸 بعد از پرداخت، <b>عکس رسید</b> را همینجا بفرست.\n"
-        "⏳ بعد از تأیید ادمین، سرویس فوراً فعال می‌شود!",
+        "⏳ بعد از تأیید ادمین، موجودی شارژ می‌شود.\n"
+        "🛒 سپس دوباره همین پلن را انتخاب کن و خرید را تکمیل کن.",
         parse_mode="HTML",
     )
     await callback.answer("📸 منتظر رسید")

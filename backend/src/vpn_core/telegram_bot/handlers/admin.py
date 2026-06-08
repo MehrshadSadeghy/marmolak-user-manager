@@ -3,15 +3,12 @@ import logging
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
-from vpn_core.billing_domain.domain.payment_request import PaymentPurpose
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
 from vpn_core.telegram_bot.handlers.common import (
     guard_admin_callback,
     handle_admin_api_error,
     notify_user_chat,
-    resolve_purchase_delivery,
-    send_delivery_to_chat,
 )
 from vpn_core.telegram_bot.keyboards.main import admin_menu_keyboard, admin_plans_keyboard, admin_services_keyboard, buy_now_keyboard
 from vpn_core.telegram_bot.messages import PURPOSE_FA, format_toman, wallet_recharged_message
@@ -136,62 +133,25 @@ async def admin_approve(callback: CallbackQuery, api: UserManagerApiClient, bot_
 
     user_chat_id = result["user_chat_id"]
     user_telegram_id = result["user_telegram_id"]
-    purpose = result.get("purpose")
-    purchase = result.get("purchase")
-    delivery = await resolve_purchase_delivery(api, user_telegram_id, result)
-
     text = (
         f"✅ پرداخت #{payment_id} تأیید شد.\n"
         f"👤 کاربر: {user_telegram_id}\n"
-        f"💰 موجودی کاربر: {format_toman(result['wallet_balance_toman'])}"
+        f"💰 موجودی جدید کاربر: {format_toman(result['wallet_balance_toman'])}"
     )
-    if purchase and not delivery:
-        text += (
-            "\n\n⚠️ سرویس فعال شد ولی کانفیگ ارسال نشد.\n"
-            "کاربر می‌تواند از «سرویس‌های من» دانلود کند."
-        )
 
     if message.caption is not None:
         await message.edit_caption(text, parse_mode="HTML")
     else:
         await message.edit_text(text, parse_mode="HTML")
 
-    if purpose == PaymentPurpose.topup.value:
-        notified = await notify_user_chat(
-            message.bot,
-            user_chat_id,
-            wallet_recharged_message(result["wallet_balance_toman"]),
-            reply_markup=buy_now_keyboard(),
-        )
-        if not notified:
-            text += "\n\n⚠️ ارسال پیام به کاربر ناموفق بود (شاید ربات را /start نکرده)."
-    elif delivery:
-        await notify_user_chat(
-            message.bot,
-            user_chat_id,
-            "✅ <b>پرداخت شما تأیید شد!</b>\n\n📩 فایل کانفیگ در پیام بعدی ارسال می‌شود.",
-        )
-        sent = await send_delivery_to_chat(
-            message.bot,
-            user_chat_id,
-            delivery,
-            reply_markup=buy_now_keyboard(),
-        )
-        if not sent:
-            await notify_user_chat(
-                message.bot,
-                user_chat_id,
-                "⚠️ ارسال فایل کانفیگ ناموفق بود. از منوی «سرویس‌های من» دوباره تلاش کن.",
-                reply_markup=buy_now_keyboard(),
-            )
-    elif purchase:
-        await notify_user_chat(
-            message.bot,
-            user_chat_id,
-            "✅ <b>پرداخت شما تأیید شد و سرویس فعال شد!</b>\n\n"
-            "📦 برای دریافت فایل .ovpn به «سرویس‌های من» برو.",
-            reply_markup=buy_now_keyboard(),
-        )
+    notified = await notify_user_chat(
+        message.bot,
+        user_chat_id,
+        wallet_recharged_message(result["wallet_balance_toman"]),
+        reply_markup=buy_now_keyboard(),
+    )
+    if not notified:
+        LOGGER.warning("Could not notify user %s after payment approval", user_telegram_id)
 
     await callback.answer("✅ تأیید شد")
 
