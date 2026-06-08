@@ -47,9 +47,13 @@ class UserManagerApiClient:
         data = await self._request("GET", "/api/v1/bot/services")
         return data["services"]
 
-    async def list_plans(self, service_type: str) -> list[dict]:
-        data = await self._request("GET", f"/api/v1/bot/services/{service_type}/plans")
+    async def list_plans(self, service_type: str, telegram_id: str | None = None) -> list[dict]:
+        query = f"?telegram_id={telegram_id}" if telegram_id else ""
+        data = await self._request("GET", f"/api/v1/bot/services/{service_type}/plans{query}")
         return data["plans"]
+
+    async def get_user_access(self, telegram_id: str) -> dict:
+        return await self._request("GET", f"/api/v1/bot/users/{telegram_id}/access")
 
     async def preview_purchase(self, telegram_id: str, plan_id: int) -> dict:
         return await self._request(
@@ -251,5 +255,128 @@ class UserManagerApiClient:
             "POST",
             f"/api/v1/admin/bot/servers/{server_id}/openvpn-endpoint",
             json={"port": port, "proto": proto},
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def list_admin_users(
+        self,
+        admin_telegram_id: str,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        query: str | None = None,
+    ) -> dict:
+        params = f"?page={page}&page_size={page_size}"
+        if query:
+            params += f"&q={query}"
+        return await self._request(
+            "GET",
+            f"/api/v1/admin/users{params}",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def get_admin_user_detail(self, admin_telegram_id: str, user_id: int) -> dict:
+        return await self._request(
+            "GET",
+            f"/api/v1/admin/users/{user_id}",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def list_admin_user_configs(self, admin_telegram_id: str, user_id: int) -> list[dict]:
+        data = await self._request(
+            "GET",
+            f"/api/v1/admin/users/{user_id}/configs",
+            admin_telegram_id=admin_telegram_id,
+        )
+        return data["configs"]
+
+    async def get_admin_user_config_detail(
+        self,
+        admin_telegram_id: str,
+        user_id: int,
+        config_id: str,
+    ) -> dict:
+        return await self._request(
+            "GET",
+            f"/api/v1/admin/users/{user_id}/configs/{config_id}",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def block_admin_user(
+        self,
+        admin_telegram_id: str,
+        user_id: int,
+        *,
+        reason: str | None = None,
+    ) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/admin/users/{user_id}/block",
+            json={"reason": reason},
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def unblock_admin_user(self, admin_telegram_id: str, user_id: int) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/admin/users/{user_id}/unblock",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def enable_admin_user_config(
+        self,
+        admin_telegram_id: str,
+        user_id: int,
+        config_id: str,
+    ) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/admin/users/{user_id}/configs/{config_id}/enable",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def disable_admin_user_config(
+        self,
+        admin_telegram_id: str,
+        user_id: int,
+        config_id: str,
+    ) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/admin/users/{user_id}/configs/{config_id}/disable",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def regenerate_admin_user_config(
+        self,
+        admin_telegram_id: str,
+        user_id: int,
+        config_id: str,
+    ) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/admin/users/{user_id}/configs/{config_id}/regenerate",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def add_admin_user_collaborator(
+        self,
+        admin_telegram_id: str,
+        user_id: int,
+        *,
+        discount_percent: int,
+        service_type: str,
+    ) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/admin/users/{user_id}/collaborator",
+            json={"discount_percent": discount_percent, "service_type": service_type},
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def remove_admin_user_collaborator(self, admin_telegram_id: str, user_id: int) -> dict:
+        return await self._request(
+            "DELETE",
+            f"/api/v1/admin/users/{user_id}/collaborator",
             admin_telegram_id=admin_telegram_id,
         )

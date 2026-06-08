@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from vpn_core.bot_gateway_domain.api.v1.dependency import BotGatewayServiceDep
 from vpn_core.bot_gateway_domain.api.v1.dto import (
@@ -29,6 +29,7 @@ from vpn_core.bot_gateway_domain.api.v1.dto import (
     TopupRequestDTO,
     UserResponseDTO,
     UserServicesResponseDTO,
+    UserAccessStatusDTO,
     WalletResponseDTO,
 )
 from vpn_core.bot_gateway_domain.service import BotGatewayService
@@ -88,8 +89,26 @@ async def list_services(service: BotGatewayServiceDep) -> ServiceTypeListRespons
 async def list_service_plans(
     service_type: Annotated[str, Path()],
     gateway: BotGatewayServiceDep,
+    telegram_id: Annotated[str | None, Query()] = None,
 ) -> PlanListResponseDTO:
-    return PlanListResponseDTO(plans=await gateway.list_plans(service_type))
+    user_id = None
+    if telegram_id:
+        user = await gateway.get_user_by_telegram(telegram_id)
+        if user:
+            user_id = user.id
+    return PlanListResponseDTO(plans=await gateway.list_plans(service_type, user_id=user_id))
+
+
+@router.get("/users/{telegram_id}/access", response_model=UserAccessStatusDTO)
+async def get_user_access(
+    telegram_id: Annotated[str, Path()],
+    service: BotGatewayServiceDep,
+) -> UserAccessStatusDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    status = await service.get_user_access_status(user.id)
+    return UserAccessStatusDTO(**status)
 
 
 @router.get("/users/{telegram_id}/wallet", response_model=WalletResponseDTO)
@@ -116,6 +135,8 @@ async def preview_purchase(body: PurchaseRequestDTO, service: BotGatewayServiceD
         price_toman=preview.price_toman,
         sufficient_balance=preview.sufficient_balance,
         shortfall_toman=preview.shortfall_toman,
+        original_price_toman=preview.original_price_toman,
+        discount_percent=preview.discount_percent,
     )
 
 

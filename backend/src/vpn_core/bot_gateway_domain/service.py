@@ -38,6 +38,7 @@ from vpn_core.subscription_domain.domain.queries import (
 from vpn_core.subscription_domain.domain.subscription import Subscription, SubscriptionStatus
 from vpn_core.subscription_domain.domain.user import User
 from vpn_core.subscription_domain.service import SubscriptionService
+from vpn_core.user_admin_domain.service import UserAdminService
 
 
 @dataclass
@@ -67,6 +68,8 @@ class PurchasePreview:
     price_toman: int
     sufficient_balance: bool
     shortfall_toman: int
+    original_price_toman: int | None = None
+    discount_percent: int | None = None
 
 
 @dataclass
@@ -109,6 +112,7 @@ class BotGatewayService:
         openvpn_service: OpenVpnProvisioningService,
         openvpn_endpoint_service: OpenVpnEndpointService,
         server_service: ServerService,
+        user_admin_service: UserAdminService,
         subscription_base_url: str,
     ):
         self._subscription_service = subscription_service
@@ -117,6 +121,7 @@ class BotGatewayService:
         self._openvpn_service = openvpn_service
         self._openvpn_endpoint_service = openvpn_endpoint_service
         self._server_service = server_service
+        self._user_admin_service = user_admin_service
         self._subscription_base_url = subscription_base_url.rstrip("/")
 
     async def register_user(
@@ -142,33 +147,52 @@ class BotGatewayService:
     async def list_enabled_services(self):
         return await self._commerce_service.list_service_types(enabled_only=True)
 
-    async def list_plans(self, service_type: str) -> list[Plan]:
+    async def list_plans(self, service_type: str, user_id: int | None = None) -> list[Plan]:
         service = await self._commerce_service.get_service_type(service_type)
         if not service or not service.is_enabled:
             raise HTTPException(status_code=404, detail="Service type not available")
-        return await self._subscription_service.list_plans(
+        plans = await self._subscription_service.list_plans(
             ListPlansQuery(service_type=service_type, active_only=True)
         )
+        if user_id is None:
+            return plans
+        discounted: list[Plan] = []
+        for plan in plans:
+            discounted.append(await self._apply_plan_discount(user_id, plan))
+        return discounted
+
+    async def get_user_access_status(self, user_id: int) -> dict:
+        blocked = await self._user_admin_service.is_user_blocked(user_id)
+        return {"user_id": user_id, "is_blocked": blocked}
 
     async def get_wallet_balance(self, user_id: int) -> int:
         wallet = await self._billing_service.get_wallet(user_id)
         return wallet.balance_toman
 
     async def preview_purchase(self, user_id: int, plan_id: int) -> PurchasePreview:
+        await self._user_admin_service.assert_user_not_blocked(user_id)
         plan = await self._get_active_plan(plan_id)
+        discounted_plan = await self._apply_plan_discount(user_id, plan)
+        price_toman, discount_percent = await self._user_admin_service.apply_discounted_price(
+            user_id,
+            plan,
+        )
         wallet = await self._billing_service.get_wallet(user_id)
-        shortfall = max(plan.price_toman - wallet.balance_toman, 0)
+        shortfall = max(price_toman - wallet.balance_toman, 0)
         return PurchasePreview(
-            plan=plan,
+            plan=discounted_plan,
             wallet_balance_toman=wallet.balance_toman,
-            price_toman=plan.price_toman,
+            price_toman=price_toman,
             sufficient_balance=shortfall == 0,
             shortfall_toman=shortfall,
+            original_price_toman=plan.price_toman if discount_percent else None,
+            discount_percent=discount_percent,
         )
 
     async def renew_with_wallet(
         self, user_id: int, subscription_id: int, plan_id: int
     ) -> PurchaseResult:
+        await self._user_admin_service.assert_user_not_blocked(user_id)
         return await self._fulfill_renewal_from_wallet(user_id, subscription_id, plan_id)
 
     async def purchase_with_wallet(self, user_id: int, plan_id: int) -> PurchaseResult:
@@ -179,7 +203,7 @@ class BotGatewayService:
         await self._billing_service.debit_wallet(
             DebitWalletCommand(
                 user_id=user_id,
-                amount_toman=preview.plan.price_toman,
+                amount_toman=preview.price_toman,
                 description=f"Purchase {preview.plan.name}",
                 reference_type="plan",
                 reference_id=plan_id,
@@ -212,11 +236,12 @@ class BotGatewayService:
         subscription_id: int | None = None,
         service_type: str | None = None,
     ):
+        await self._user_admin_service.assert_user_not_blocked(user_id)
         if purpose in {PaymentPurpose.purchase, PaymentPurpose.renewal}:
             if plan_id is None:
                 raise HTTPException(status_code=400, detail="plan_id is required")
             plan = await self._get_active_plan(plan_id)
-            amount_toman = plan.price_toman
+            amount_toman, _ = await self._user_admin_service.apply_discounted_price(user_id, plan)
             service_type = plan.service_type
         elif purpose == PaymentPurpose.topup and amount_toman <= 0:
             raise HTTPException(status_code=400, detail="Top-up amount must be positive")
@@ -572,10 +597,11 @@ class BotGatewayService:
             raise HTTPException(status_code=404, detail="Subscription not found")
 
         plan = await self._get_active_plan(plan_id)
+        price_toman, _ = await self._user_admin_service.apply_discounted_price(user_id, plan)
         await self._billing_service.debit_wallet(
             DebitWalletCommand(
                 user_id=user_id,
-                amount_toman=plan.price_toman,
+                amount_toman=price_toman,
                 description=f"Renew {plan.name}",
                 reference_type="plan",
                 reference_id=plan_id,
@@ -607,6 +633,15 @@ class BotGatewayService:
         if not subscription:
             raise HTTPException(status_code=400, detail="Could not create subscription")
         return subscription
+
+    async def _apply_plan_discount(self, user_id: int, plan: Plan) -> Plan:
+        price_toman, discount_percent = await self._user_admin_service.apply_discounted_price(
+            user_id,
+            plan,
+        )
+        if discount_percent is None:
+            return plan
+        return plan.model_copy(update={"price_toman": price_toman})
 
     async def _get_active_plan(self, plan_id: int) -> Plan:
         plan = await self._subscription_service.get_plan(GetPlanQuery(plan_id=plan_id))

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class OpenVpnConfigStatus(str, Enum):
     active = "active"
+    disabled = "disabled"
     revoked = "revoked"
     expired = "expired"
 

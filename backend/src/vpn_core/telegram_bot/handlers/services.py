@@ -145,7 +145,7 @@ async def renew_subscription(callback: CallbackQuery, api: UserManagerApiClient)
         )
         await callback.answer("✅ سرویس فعال است")
         return
-    plans = await api.list_plans(selected["service_type"])
+    plans = await api.list_plans(selected["service_type"], telegram_id=tg_id)
     if not plans:
         await message.edit_text(
             "😔 پلنی برای تمدید موجود نیست.\n📞 با پشتیبانی تماس بگیر.",

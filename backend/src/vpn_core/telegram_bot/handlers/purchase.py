@@ -46,7 +46,8 @@ async def select_service(callback: CallbackQuery, api: UserManagerApiClient) -> 
         await callback.answer()
         return
     service_type = callback.data.split(":", 1)[1]
-    plans = await api.list_plans(service_type)
+    tg_id = str(callback.from_user.id)
+    plans = await api.list_plans(service_type, telegram_id=tg_id)
     if not plans:
         await message.edit_text(
             "😔 برای این سرویس پلنی تعریف نشده.\n"

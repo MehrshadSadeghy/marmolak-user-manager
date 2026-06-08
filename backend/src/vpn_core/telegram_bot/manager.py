@@ -7,6 +7,7 @@ from vpn_core.core.manager.base import Manager
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
 from vpn_core.telegram_bot.handlers import register_handlers
+from vpn_core.telegram_bot.middleware.blocked_user import BlockedUserMiddleware
 from vpn_core.telegram_bot.middleware.context import BotContextMiddleware
 
 LOGGER = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ class TelegramBotManager(Manager):
         self._dispatcher = Dispatcher(storage=MemoryStorage())
         api = UserManagerApiClient(self._config.api_base_url, self._config.bot_api_key)
         self._dispatcher.update.middleware(BotContextMiddleware(api, self._config))
+        self._dispatcher.update.middleware(BlockedUserMiddleware(self._config))
         register_handlers(self._dispatcher)
 
     async def run(self) -> None:

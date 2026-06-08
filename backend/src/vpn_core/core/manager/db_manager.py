@@ -29,16 +29,32 @@ class PostgresManager(Manager):
             return
         with self._engine.begin() as conn:
             inspector = inspect(conn)
-            if "payment_methods" not in inspector.get_table_names():
-                return
-            columns = {column["name"] for column in inspector.get_columns("payment_methods")}
-            if "card_numbers" not in columns:
-                conn.execute(
-                    text(
-                        "ALTER TABLE payment_methods "
-                        "ADD COLUMN card_numbers JSONB NOT NULL DEFAULT '[]'::jsonb"
+            table_names = set(inspector.get_table_names())
+
+            if "payment_methods" in table_names:
+                columns = {column["name"] for column in inspector.get_columns("payment_methods")}
+                if "card_numbers" not in columns:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE payment_methods "
+                            "ADD COLUMN card_numbers JSONB NOT NULL DEFAULT '[]'::jsonb"
+                        )
                     )
-                )
+
+            if "users" in table_names:
+                user_columns = {column["name"] for column in inspector.get_columns("users")}
+                user_patches = {
+                    "is_blocked": "BOOLEAN NOT NULL DEFAULT FALSE",
+                    "blocked_at": "TIMESTAMP WITH TIME ZONE",
+                    "blocked_reason": "TEXT",
+                    "blocked_by_admin_telegram_id": "VARCHAR(64)",
+                    "is_collaborator": "BOOLEAN NOT NULL DEFAULT FALSE",
+                }
+                for column_name, column_type in user_patches.items():
+                    if column_name not in user_columns:
+                        conn.execute(
+                            text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
+                        )
 
     async def run(self) -> None:
         pass

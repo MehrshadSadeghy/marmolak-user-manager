@@ -34,6 +34,13 @@ class PurchasePreviewDTO(BaseModel):
     price_toman: int
     sufficient_balance: bool
     shortfall_toman: int
+    original_price_toman: int | None = None
+    discount_percent: int | None = None
+
+
+class UserAccessStatusDTO(BaseModel):
+    user_id: int
+    is_blocked: bool
 
 
 class ServiceDeliveryDTO(BaseModel):

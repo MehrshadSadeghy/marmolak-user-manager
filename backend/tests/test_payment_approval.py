@@ -31,6 +31,14 @@ def _service(**overrides) -> BotGatewayService:
     openvpn_service = AsyncMock()
     openvpn_endpoint_service = AsyncMock()
     server_service = AsyncMock()
+    user_admin_service = AsyncMock()
+    user_admin_service.is_user_blocked.return_value = False
+
+    async def _apply_discount(user_id, plan):
+        return plan.price_toman, None
+
+    user_admin_service.assert_user_not_blocked = AsyncMock()
+    user_admin_service.apply_discounted_price = AsyncMock(side_effect=_apply_discount)
 
     service = BotGatewayService(
         subscription_service=subscription_service,
@@ -39,6 +47,7 @@ def _service(**overrides) -> BotGatewayService:
         openvpn_service=openvpn_service,
         openvpn_endpoint_service=openvpn_endpoint_service,
         server_service=server_service,
+        user_admin_service=user_admin_service,
         subscription_base_url="https://example.com",
     )
 

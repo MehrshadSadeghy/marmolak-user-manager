@@ -32,10 +32,13 @@ from vpn_core.server_management_domain.service import ServerService
 from vpn_core.strategy.api.v1.router import router as strategy_router
 from vpn_core.strategy.repository.sqlalchemy_repository import StrategyDBRepository
 from vpn_core.strategy.service import StrategyService
+from vpn_core.user_admin_domain.api.v1.router import router as user_admin_router
 from vpn_core.subscription_domain.api.v1.admin_router import router as subscription_admin_router
 from vpn_core.subscription_domain.api.v1.router import router as subscription_router
 from vpn_core.subscription_domain.repository.sqlalchemy_repository import SubscriptionDBRepository
 from vpn_core.subscription_domain.service import SubscriptionService
+from vpn_core.user_admin_domain.repository.sqlalchemy_repository import UserAdminDBRepository
+from vpn_core.user_admin_domain.service import UserAdminService
 from vpn_core.telegram_bot.config import TelegramBotConfig
 from vpn_core.telegram_bot.manager import TelegramBotManager
 
@@ -44,6 +47,7 @@ import vpn_core.commerce_domain.db_model  # noqa: F401
 import vpn_core.openvpn_sync.db_model  # noqa: F401
 import vpn_core.server_management_domain.db_model  # noqa: F401
 import vpn_core.subscription_domain.db_model  # noqa: F401
+import vpn_core.user_admin_domain.db_model  # noqa: F401
 import vpn_core.traffic_monitoring_domain.db_model  # noqa: F401
 
 singleton = lru_cache
@@ -76,6 +80,7 @@ class AppContainer:
                 openvpn_router,
                 bot_router,
                 bot_admin_router,
+                user_admin_router,
                 commerce_admin_router,
                 billing_admin_router,
             ],
@@ -154,6 +159,15 @@ class AppContainer:
     def build_openvpn_endpoint_service(self, session: Session) -> OpenVpnEndpointService:
         return OpenVpnEndpointService(server_service=self.build_server_service(session))
 
+    def build_user_admin_service(self, session: Session) -> UserAdminService:
+        return UserAdminService(
+            user_admin_repository=UserAdminDBRepository(session=session),
+            subscription_repository=SubscriptionDBRepository(session=session),
+            credential_repository=OpenVpnCredentialDBRepository(session=session),
+            openvpn_service=self.build_openvpn_provisioning_service(session),
+            server_service=self.build_server_service(session),
+        )
+
     def build_bot_gateway_service(self, session: Session) -> BotGatewayService:
         return BotGatewayService(
             subscription_service=self.build_subscription_service(session),
@@ -162,5 +176,6 @@ class AppContainer:
             openvpn_service=self.build_openvpn_provisioning_service(session),
             openvpn_endpoint_service=self.build_openvpn_endpoint_service(session),
             server_service=self.build_server_service(session),
+            user_admin_service=self.build_user_admin_service(session),
             subscription_base_url=self.get_subscription_base_url(),
         )

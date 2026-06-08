@@ -48,9 +48,10 @@ def plans_keyboard(plans: list[dict], prefix: str) -> InlineKeyboardMarkup:
     rows = []
     for plan in plans:
         gb = plan["traffic_limit_bytes"] / (1024**3)
+        price_label = f"{plan['price_toman']:,}ت"
         label = (
             f"⭐ {plan['name']} — {gb:.0f}GB / {plan['duration_days']}روز — "
-            f"{plan['price_toman']:,}ت"
+            f"{price_label}"
         )
         rows.append([InlineKeyboardButton(text=label, callback_data=f"{prefix}:plan:{plan['id']}")])
     rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:home")])
@@ -118,6 +119,7 @@ def renew_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
 def admin_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="👥 مدیریت کاربران", callback_data="admin:users")],
             [InlineKeyboardButton(text="⏳ پرداخت‌های در انتظار", callback_data="admin:payments")],
             [InlineKeyboardButton(text="🔧 انواع سرویس", callback_data="admin:services")],
             [InlineKeyboardButton(text="📋 پلن‌ها", callback_data="admin:plans")],
@@ -277,3 +279,163 @@ def admin_openvpn_confirm_keyboard() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def admin_users_list_keyboard(
+    users: list[dict],
+    *,
+    page: int,
+    total_pages: int,
+    search_query: str | None = None,
+) -> InlineKeyboardMarkup:
+    rows = []
+    for user in users:
+        blocked = "🚫" if user.get("is_blocked") else "✅"
+        collab = "🤝" if user.get("is_collaborator") else "👤"
+        username = user.get("username") or "—"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=(
+                        f"{blocked}{collab} #{user['id']} | tg:{user['telegram_id']} | @{username}"
+                    ),
+                    callback_data=f"admin:user:{user['id']}",
+                )
+            ]
+        )
+
+    nav_row = []
+    if page > 1:
+        nav_row.append(
+            InlineKeyboardButton(text="◀️ قبلی", callback_data=f"admin:users:page:{page - 1}")
+        )
+    nav_row.append(
+        InlineKeyboardButton(text=f"📄 {page}/{total_pages}", callback_data="admin:users:jump")
+    )
+    if page < total_pages:
+        nav_row.append(
+            InlineKeyboardButton(text="بعدی ▶️", callback_data=f"admin:users:page:{page + 1}")
+        )
+    if nav_row:
+        rows.append(nav_row)
+
+    rows.append([InlineKeyboardButton(text="🔍 جستجو", callback_data="admin:users:search")])
+    if search_query:
+        rows.append(
+            [InlineKeyboardButton(text="❌ پاک کردن جستجو", callback_data="admin:users:clear-search")]
+        )
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:admin")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_user_detail_keyboard(user: dict) -> InlineKeyboardMarkup:
+    user_id = user["id"]
+    rows = [
+        [InlineKeyboardButton(text="📁 کانفیگ‌ها", callback_data=f"admin:user:{user_id}:configs")],
+    ]
+    if user.get("is_blocked"):
+        rows.append(
+            [InlineKeyboardButton(text="✅ رفع مسدودیت", callback_data=f"admin:user:{user_id}:unblock")]
+        )
+    else:
+        rows.append(
+            [InlineKeyboardButton(text="🚫 مسدود کردن", callback_data=f"admin:user:{user_id}:block")]
+        )
+    if user.get("is_collaborator"):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="❌ حذف همکار",
+                    callback_data=f"admin:user:{user_id}:collab:remove",
+                )
+            ]
+        )
+    else:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🤝 افزودن همکار",
+                    callback_data=f"admin:user:{user_id}:collab:add",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="admin:users")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_user_configs_keyboard(user_id: int, configs: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for config in configs:
+        status = "🟢" if config.get("status") == "Active" else "🔴"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{status} {config['config_id']}",
+                    callback_data=f"admin:user:{user_id}:cfg:{config['config_id']}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data=f"admin:user:{user_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_user_config_detail_keyboard(user_id: int, config: dict) -> InlineKeyboardMarkup:
+    config_id = config["config_id"]
+    rows = []
+    if config.get("status") == "Active":
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔴 غیرفعال",
+                    callback_data=f"admin:user:{user_id}:cfg:{config_id}:disable",
+                )
+            ]
+        )
+    else:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🟢 فعال",
+                    callback_data=f"admin:user:{user_id}:cfg:{config_id}:enable",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="♻️ بازسازی کانفیگ",
+                callback_data=f"admin:user:{user_id}:cfg:{config_id}:regen",
+            )
+        ]
+    )
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data=f"admin:user:{user_id}:configs")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_collaborator_discount_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    percents = [5, 10, 15, 20, 30]
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{percent}%",
+                callback_data=f"admin:user:{user_id}:collab:percent:{percent}",
+            )
+        ]
+        for percent in percents
+    ]
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data=f"admin:user:{user_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_collaborator_service_keyboard(user_id: int, percent: int, services: list[dict]) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=item["display_name"],
+                callback_data=f"admin:user:{user_id}:collab:svc:{percent}:{item['slug']}",
+            )
+        ]
+        for item in services
+    ]
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data=f"admin:user:{user_id}:collab:add")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

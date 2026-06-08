@@ -139,6 +139,21 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
         self._session.refresh(obj)
         return _credential_from_orm(obj)
 
+    async def set_status(
+        self,
+        credential_id: int,
+        status: OpenVpnConfigStatus,
+    ) -> OpenVpnClientCredential | None:
+        obj = self._session.get(OpenVpnClientCredentialORM, credential_id)
+        if not obj:
+            return None
+        obj.status = status.value
+        if status == OpenVpnConfigStatus.revoked:
+            obj.revoked_at = datetime.now(UTC)
+        self._session.commit()
+        self._session.refresh(obj)
+        return _credential_from_orm(obj)
+
 
 class OpenVpnTrafficDBRepository(OpenVpnTrafficRepository):
     def __init__(self, session: Session):

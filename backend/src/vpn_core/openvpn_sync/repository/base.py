@@ -54,6 +54,14 @@ class OpenVpnCredentialRepository(ABC):
     async def revoke(self, credential_id: int) -> OpenVpnClientCredential | None:
         pass
 
+    @abstractmethod
+    async def set_status(
+        self,
+        credential_id: int,
+        status: OpenVpnConfigStatus,
+    ) -> OpenVpnClientCredential | None:
+        pass
+
 
 class OpenVpnTrafficRepository(ABC):
     @abstractmethod

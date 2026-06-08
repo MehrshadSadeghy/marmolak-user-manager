@@ -15,3 +15,5 @@ class AdminFlow(StatesGroup):
     create_pm_instructions = State()
     create_pm_card_numbers = State()
     openvpn_endpoint_port = State()
+    waiting_user_search = State()
+    waiting_user_page_jump = State()

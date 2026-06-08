@@ -57,6 +57,11 @@ class SubscriptionDBRepository(SubscriptionRepository):
         obj.chat_id = user.chat_id
         obj.username = user.username
         obj.is_active = user.is_active
+        obj.is_blocked = user.is_blocked
+        obj.blocked_at = user.blocked_at
+        obj.blocked_reason = user.blocked_reason
+        obj.blocked_by_admin_telegram_id = user.blocked_by_admin_telegram_id
+        obj.is_collaborator = user.is_collaborator
         self._session.add(obj)
         self._session.commit()
         self._session.refresh(obj)
