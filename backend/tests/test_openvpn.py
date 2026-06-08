@@ -1,10 +1,11 @@
+import re
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
 
 from vpn_core.openvpn_sync.domain.commands import DeactivateOpenVpnCommand
-from vpn_core.openvpn_sync.services.helpers import build_common_name, node_api_configured
+from vpn_core.openvpn_sync.services.helpers import generate_config_id, node_api_configured
 from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTrafficService
 from vpn_core.server_management_domain.domain.capacity import ServerCapacity
 from vpn_core.server_management_domain.domain.connection_info import ConnectionInfo
@@ -31,16 +32,14 @@ def _server(*, name: str, openvpn_enabled: bool = False, xray_tag: str | None = 
     )
 
 
-def test_build_common_name_default_slot():
-    assert build_common_name("123456789") == "tg-123456789"
+def test_generate_config_id_is_ten_digits():
+    config_id = generate_config_id()
+    assert re.fullmatch(r"\d{10}", config_id)
 
 
-def test_build_common_name_with_slot_index():
-    assert build_common_name("123456789", 2) == "tg-123456789-2"
-
-
-def test_build_common_name_slot_zero_is_base():
-    assert build_common_name("99", 0) == "tg-99"
+def test_generate_config_id_is_unique_enough():
+    ids = {generate_config_id() for _ in range(100)}
+    assert len(ids) > 90
 
 
 @pytest.mark.asyncio

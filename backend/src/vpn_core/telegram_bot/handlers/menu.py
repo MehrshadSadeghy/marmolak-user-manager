@@ -1,5 +1,6 @@
 from aiogram import F, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
@@ -23,7 +24,13 @@ async def cmd_start(message: Message, api: UserManagerApiClient, bot_config: Tel
 
 
 @router.callback_query(F.data == "menu:home")
-async def menu_home(callback: CallbackQuery, api: UserManagerApiClient, bot_config: TelegramBotConfig) -> None:
+async def menu_home(
+    callback: CallbackQuery,
+    state: FSMContext,
+    api: UserManagerApiClient,
+    bot_config: TelegramBotConfig,
+) -> None:
+    await state.clear()
     message = callback.message
     if not message:
         await callback.answer()

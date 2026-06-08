@@ -35,6 +35,7 @@ async def send_delivery(message: Message, delivery: dict) -> None:
             document,
             caption=(
                 "🎉 <b>سرویس شما آماده است!</b>\n\n"
+                f"🆔 کد کانفیگ: <code>{delivery.get('filename', '').removesuffix('.ovpn') or '—'}</code>\n"
                 "📂 فایل کانفیگ OpenVPN\n"
                 "⚡ همین الان وارد شو و لذت ببر!\n\n"
                 "💡 سرویس دیگری هم می‌خواهی؟ 👇"

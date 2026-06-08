@@ -9,6 +9,8 @@ from vpn_core.bot_gateway_domain.api.v1.dto import (
     AdminOpenVpnServerSummaryDTO,
     ApplyOpenVpnEndpointDTO,
     ApplyOpenVpnEndpointResponseDTO,
+    ConfigTrafficLookupDTO,
+    ConfigTrafficStatusDTO,
     InitiatePaymentDTO,
     PaymentApprovalResponseDTO,
     PaymentMethodListResponseDTO,
@@ -201,6 +203,27 @@ async def list_user_services(
             }
         )
     return UserServicesResponseDTO(services=items)
+
+
+@router.post("/openvpn/config-traffic", response_model=ConfigTrafficStatusDTO)
+async def get_openvpn_config_traffic(
+    body: ConfigTrafficLookupDTO,
+    service: BotGatewayServiceDep,
+) -> ConfigTrafficStatusDTO:
+    user = await service.get_user_by_telegram(body.telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    summary = await service.get_openvpn_config_traffic(user.id, body.config_id)
+    return ConfigTrafficStatusDTO(
+        config_id=summary.config_id,
+        subscription_id=summary.subscription_id,
+        status_label=summary.status_label,
+        is_active=summary.is_active,
+        remaining_days=summary.remaining_days,
+        remaining_bytes=summary.remaining_bytes,
+        remaining_data_label=BotGatewayService.format_bytes(summary.remaining_bytes),
+        expire_at=summary.expire_at.isoformat(),
+    )
 
 
 @router.get("/support", response_model=SupportResponseDTO)

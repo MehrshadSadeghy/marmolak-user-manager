@@ -118,6 +118,22 @@ class RenewRequestDTO(BaseModel):
     plan_id: int
 
 
+class ConfigTrafficLookupDTO(BaseModel):
+    telegram_id: str
+    config_id: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{10}$")
+
+
+class ConfigTrafficStatusDTO(BaseModel):
+    config_id: str
+    subscription_id: int
+    status_label: str
+    is_active: bool
+    remaining_days: int
+    remaining_bytes: int
+    remaining_data_label: str
+    expire_at: str
+
+
 class AdminPaymentReviewDTO(BaseModel):
     admin_note: str = ""
 

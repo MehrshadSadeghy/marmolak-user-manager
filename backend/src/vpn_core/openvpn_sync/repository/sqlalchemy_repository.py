@@ -76,6 +76,21 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
         )
         return _credential_from_orm(obj) if obj else None
 
+    async def get_by_common_name_for_user(
+        self,
+        config_id: str,
+        user_id: int,
+    ) -> OpenVpnClientCredential | None:
+        obj = (
+            self._session.query(OpenVpnClientCredentialORM)
+            .filter(
+                OpenVpnClientCredentialORM.common_name == config_id,
+                OpenVpnClientCredentialORM.user_id == user_id,
+            )
+            .first()
+        )
+        return _credential_from_orm(obj) if obj else None
+
     async def list_by_user(
         self,
         user_id: int,

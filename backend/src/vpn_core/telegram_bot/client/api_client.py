@@ -111,6 +111,13 @@ class UserManagerApiClient:
     async def get_wallet(self, telegram_id: str) -> dict:
         return await self._request("GET", f"/api/v1/bot/users/{telegram_id}/wallet")
 
+    async def get_openvpn_config_traffic(self, telegram_id: str, config_id: str) -> dict:
+        return await self._request(
+            "POST",
+            "/api/v1/bot/openvpn/config-traffic",
+            json={"telegram_id": telegram_id, "config_id": config_id},
+        )
+
     async def list_pending_payments(self, admin_telegram_id: str) -> list[dict]:
         data = await self._request(
             "GET",

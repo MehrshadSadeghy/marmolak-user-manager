@@ -18,6 +18,7 @@ from vpn_core.billing_domain.domain.queries import ListPaymentRequestsQuery
 from vpn_core.billing_domain.service import BillingService
 from vpn_core.commerce_domain.service import CommerceService
 from vpn_core.openvpn_sync.domain.commands import ProvisionOpenVpnCommand
+from vpn_core.openvpn_sync.domain.openvpn_client_credential import OpenVpnConfigStatus
 from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
 from vpn_core.server_management_domain.domain.queries import ListServersQuery
@@ -74,6 +75,17 @@ class PurchaseResult:
     paid_from_wallet: bool
     payment_request_id: int | None
     delivery: ServiceConfigDelivery | None
+
+
+@dataclass
+class ConfigTrafficSummary:
+    config_id: str
+    subscription_id: int
+    status_label: str
+    is_active: bool
+    remaining_days: int
+    remaining_bytes: int
+    expire_at: datetime
 
 
 @dataclass
@@ -421,6 +433,59 @@ class BotGatewayService:
                 )
             )
         return summaries
+
+    async def get_openvpn_config_traffic(
+        self,
+        user_id: int,
+        config_id: str,
+    ) -> ConfigTrafficSummary:
+        config_id = config_id.strip()
+        if len(config_id) != 10 or not config_id.isdigit():
+            raise HTTPException(status_code=400, detail="Config ID must be exactly 10 digits")
+
+        credential = await self._openvpn_service.get_config_by_config_id(user_id, config_id)
+        if not credential:
+            raise HTTPException(status_code=404, detail="Config not found")
+
+        if not credential.subscription_id:
+            raise HTTPException(status_code=404, detail="Subscription not linked to config")
+
+        subscription = await self._subscription_service.get_subscription(
+            GetSubscriptionQuery(subscription_id=credential.subscription_id)
+        )
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+
+        now = datetime.now(UTC)
+        remaining_days = max((subscription.expire_at - now).days, 0)
+        remaining_bytes = max(
+            subscription.traffic_limit_bytes - subscription.traffic_used_bytes,
+            0,
+        )
+        is_active = (
+            credential.status == OpenVpnConfigStatus.active
+            and subscription.status == SubscriptionStatus.active
+            and subscription.expire_at > now
+            and (
+                subscription.traffic_limit_bytes == 0
+                or subscription.traffic_used_bytes < subscription.traffic_limit_bytes
+            )
+        )
+        status_label = subscription.status.value
+        if credential.status != OpenVpnConfigStatus.active:
+            status_label = "disabled"
+        elif subscription.expire_at <= now and subscription.status == SubscriptionStatus.active:
+            status_label = "expired"
+
+        return ConfigTrafficSummary(
+            config_id=config_id,
+            subscription_id=subscription.id,
+            status_label=status_label,
+            is_active=is_active,
+            remaining_days=remaining_days,
+            remaining_bytes=remaining_bytes,
+            expire_at=subscription.expire_at,
+        )
 
     async def get_support_info(self):
         return await self._commerce_service.get_bot_settings()

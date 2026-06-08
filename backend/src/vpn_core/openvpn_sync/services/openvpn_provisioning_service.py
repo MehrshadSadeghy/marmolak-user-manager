@@ -12,7 +12,7 @@ from vpn_core.openvpn_sync.domain.openvpn_client_credential import (
 from vpn_core.openvpn_sync.domain.openvpn_user import OpenVpnUser
 from vpn_core.openvpn_sync.domain.sync_result import ProvisioningResult, SyncOperationResult, SyncStatus
 from vpn_core.openvpn_sync.repository.base import OpenVpnCredentialRepository
-from vpn_core.openvpn_sync.services.helpers import build_common_name, node_api_configured
+from vpn_core.openvpn_sync.services.helpers import generate_config_id, node_api_configured
 from vpn_core.server_management_domain.domain.queries import GetServerQuery
 from vpn_core.server_management_domain.service import ServerService
 from vpn_core.subscription_domain.domain.queries import (
@@ -73,39 +73,29 @@ class OpenVpnProvisioningService:
 
         credentials: list[OpenVpnClientCredential] = []
         results: list[SyncOperationResult] = []
-        any_idempotent = False
-
-        for slot in range(command.config_count):
-            common_name = build_common_name(user.telegram_id, slot)
-            existing = await self._credential_repository.get_by_common_name(
-                command.server_id, common_name
+        existing_count = len(
+            await self._credential_repository.list_by_user(
+                command.user_id,
+                server_id=command.server_id,
             )
-            if existing and existing.status == OpenVpnConfigStatus.active:
-                credentials.append(existing)
-                results.append(
-                    SyncOperationResult(
-                        operation="create",
-                        status=SyncStatus.skipped,
-                        message="User already provisioned (idempotent skip)",
-                        server_id=command.server_id,
-                        common_name=common_name,
-                    )
-                )
-                any_idempotent = True
-                continue
+        )
 
-            ovpn_user = OpenVpnUser(common_name=common_name, telegram_id=user.telegram_id)
+        for offset in range(command.config_count):
+            config_id = await self._allocate_config_id(command.server_id)
+            slot_index = existing_count + offset
+
+            ovpn_user = OpenVpnUser(common_name=config_id, telegram_id=user.telegram_id)
             try:
                 ovpn_content = await self._client.create_user(server, ovpn_user)
             except Exception as exc:
-                LOGGER.exception("OpenVPN provisioning failed for %s", common_name)
+                LOGGER.exception("OpenVPN provisioning failed for %s", config_id)
                 results.append(
                     SyncOperationResult(
                         operation="create",
                         status=SyncStatus.failed,
                         message=str(exc),
                         server_id=command.server_id,
-                        common_name=common_name,
+                        common_name=config_id,
                     )
                 )
                 continue
@@ -115,8 +105,8 @@ class OpenVpnProvisioningService:
                 subscription_id=subscription.id,
                 server_id=command.server_id,
                 telegram_id=user.telegram_id,
-                common_name=common_name,
-                slot_index=slot,
+                common_name=config_id,
+                slot_index=slot_index,
                 ovpn_content=ovpn_content,
                 status=OpenVpnConfigStatus.active,
             )
@@ -128,7 +118,7 @@ class OpenVpnProvisioningService:
                     status=SyncStatus.success,
                     message="OpenVPN user provisioned",
                     server_id=command.server_id,
-                    common_name=common_name,
+                    common_name=config_id,
                     executed_at=datetime.now(UTC),
                 )
             )
@@ -139,8 +129,23 @@ class OpenVpnProvisioningService:
         return ProvisioningResult(
             credentials=credentials,
             results=results,
-            idempotent=any_idempotent and len(credentials) == command.config_count,
+            idempotent=False,
         )
+
+    async def _allocate_config_id(self, server_id: int) -> str:
+        for _ in range(32):
+            config_id = generate_config_id()
+            existing = await self._credential_repository.get_by_common_name(server_id, config_id)
+            if not existing:
+                return config_id
+        raise HTTPException(status_code=500, detail="Could not allocate unique config ID")
+
+    async def get_config_by_config_id(
+        self,
+        user_id: int,
+        config_id: str,
+    ) -> OpenVpnClientCredential | None:
+        return await self._credential_repository.get_by_common_name_for_user(config_id, user_id)
 
     async def list_configs(
         self,

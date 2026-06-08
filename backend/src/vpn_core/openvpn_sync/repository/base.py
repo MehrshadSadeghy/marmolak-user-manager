@@ -19,6 +19,14 @@ class OpenVpnCredentialRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_by_common_name_for_user(
+        self,
+        config_id: str,
+        user_id: int,
+    ) -> OpenVpnClientCredential | None:
+        pass
+
+    @abstractmethod
     async def list_by_user(
         self,
         user_id: int,

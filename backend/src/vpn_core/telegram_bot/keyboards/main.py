@@ -7,6 +7,7 @@ def main_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔄 تمدید سرویس", callback_data="menu:renew")],
         [InlineKeyboardButton(text="💳 شارژ کیف پول", callback_data="menu:topup")],
         [InlineKeyboardButton(text="📦 سرویس‌های من", callback_data="menu:services")],
+        [InlineKeyboardButton(text="📊 استعلام حجم کانفیگ", callback_data="menu:config-traffic")],
         [InlineKeyboardButton(text="💬 پشتیبانی", callback_data="menu:support")],
     ]
     if is_admin:
