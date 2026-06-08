@@ -200,9 +200,54 @@ async def list_user_services(
                 "remaining_bytes": item.remaining_bytes,
                 "remaining_data_label": BotGatewayService.format_bytes(item.remaining_bytes),
                 "expire_at": item.subscription.expire_at.isoformat(),
+                "config_ids": item.config_ids,
             }
         )
     return UserServicesResponseDTO(services=items)
+
+
+@router.get(
+    "/users/{telegram_id}/subscriptions/{subscription_id}/delivery",
+    response_model=ServiceDeliveryDTO,
+)
+async def get_subscription_delivery(
+    telegram_id: Annotated[str, Path()],
+    subscription_id: Annotated[int, Path()],
+    service: BotGatewayServiceDep,
+) -> ServiceDeliveryDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    delivery = await service.get_subscription_delivery(user.id, subscription_id)
+    return ServiceDeliveryDTO(
+        service_type=delivery.service_type,
+        subscription_id=delivery.subscription_id,
+        delivery_type=delivery.delivery_type,
+        content=delivery.content,
+        filename=delivery.filename,
+    )
+
+
+@router.get(
+    "/users/{telegram_id}/openvpn/configs/{config_id}/delivery",
+    response_model=ServiceDeliveryDTO,
+)
+async def get_openvpn_config_delivery(
+    telegram_id: Annotated[str, Path()],
+    config_id: Annotated[str, Path()],
+    service: BotGatewayServiceDep,
+) -> ServiceDeliveryDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    delivery = await service.get_openvpn_config_delivery(user.id, config_id)
+    return ServiceDeliveryDTO(
+        service_type=delivery.service_type,
+        subscription_id=delivery.subscription_id or 0,
+        delivery_type=delivery.delivery_type,
+        content=delivery.content,
+        filename=delivery.filename,
+    )
 
 
 @router.post("/openvpn/config-traffic", response_model=ConfigTrafficStatusDTO)

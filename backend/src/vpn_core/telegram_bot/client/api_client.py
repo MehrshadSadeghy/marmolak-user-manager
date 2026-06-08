@@ -98,6 +98,18 @@ class UserManagerApiClient:
         data = await self._request("GET", f"/api/v1/bot/users/{telegram_id}/services")
         return data["services"]
 
+    async def get_subscription_delivery(self, telegram_id: str, subscription_id: int) -> dict:
+        return await self._request(
+            "GET",
+            f"/api/v1/bot/users/{telegram_id}/subscriptions/{subscription_id}/delivery",
+        )
+
+    async def get_openvpn_config_delivery(self, telegram_id: str, config_id: str) -> dict:
+        return await self._request(
+            "GET",
+            f"/api/v1/bot/users/{telegram_id}/openvpn/configs/{config_id}/delivery",
+        )
+
     async def get_support(self) -> dict:
         return await self._request("GET", "/api/v1/bot/support")
 

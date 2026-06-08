@@ -57,6 +57,7 @@ class UserServiceSummary:
     remaining_days: int
     remaining_bytes: int
     status_label: str
+    config_ids: list[str]
 
 
 @dataclass
@@ -488,9 +489,72 @@ class BotGatewayService:
                     remaining_days=remaining_days,
                     remaining_bytes=remaining_bytes,
                     status_label=status_label,
+                    config_ids=await self._config_ids_for_subscription(
+                        user_id,
+                        subscription.id,
+                        subscription.service_type,
+                    ),
                 )
             )
         return summaries
+
+    async def _config_ids_for_subscription(
+        self,
+        user_id: int,
+        subscription_id: int | None,
+        service_type: str,
+    ) -> list[str]:
+        if subscription_id is None or service_type != "openvpn":
+            return []
+        credentials = await self._openvpn_service.get_configs_for_subscription(
+            user_id,
+            subscription_id,
+        )
+        return [credential.common_name for credential in credentials if self._is_valid_ovpn(credential.ovpn_content)]
+
+    async def get_subscription_delivery(
+        self,
+        user_id: int,
+        subscription_id: int,
+    ) -> ServiceConfigDelivery:
+        subscription = await self._subscription_service.get_subscription(
+            GetSubscriptionQuery(subscription_id=subscription_id)
+        )
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        delivery = await self._ensure_delivery_for_subscription(subscription)
+        if not delivery:
+            raise HTTPException(status_code=404, detail="Configuration not available for this service")
+        return delivery
+
+    async def get_openvpn_config_delivery(
+        self,
+        user_id: int,
+        config_id: str,
+    ) -> ServiceConfigDelivery:
+        config_id = config_id.strip()
+        if len(config_id) != 10 or not config_id.isdigit():
+            raise HTTPException(status_code=400, detail="Config ID must be exactly 10 digits")
+
+        credential = await self._openvpn_service.get_config_by_config_id(user_id, config_id)
+        if not credential or credential.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+        if not self._is_valid_ovpn(credential.ovpn_content):
+            subscription_id = credential.subscription_id or 0
+            if subscription_id:
+                subscription = await self._subscription_service.get_subscription(
+                    GetSubscriptionQuery(subscription_id=subscription_id)
+                )
+                if subscription:
+                    return await self.get_subscription_delivery(user_id, subscription_id)
+            raise HTTPException(status_code=404, detail="Configuration not available")
+        return ServiceConfigDelivery(
+            service_type="openvpn",
+            subscription_id=credential.subscription_id or 0,
+            delivery_type="file",
+            content=credential.ovpn_content,
+            filename=f"{credential.common_name}.ovpn",
+        )
 
     async def get_openvpn_config_traffic(
         self,
@@ -653,17 +717,75 @@ class BotGatewayService:
         return plan
 
     async def _try_deliver(self, subscription: Subscription) -> ServiceConfigDelivery | None:
+        delivery = await self._ensure_delivery_for_subscription(subscription)
+        if delivery:
+            return delivery
+        LOGGER.error(
+            "Service delivery failed for subscription %s: no configuration could be produced",
+            subscription.id,
+        )
+        return None
+
+    @staticmethod
+    def _is_valid_ovpn(content: str) -> bool:
+        return bool(content) and "MOCK-CA" not in content and "<ca>" in content
+
+    def _credential_delivery(
+        self,
+        subscription: Subscription,
+        credential,
+    ) -> ServiceConfigDelivery:
+        return ServiceConfigDelivery(
+            service_type=subscription.service_type,
+            subscription_id=subscription.id,
+            delivery_type="file",
+            content=credential.ovpn_content,
+            filename=f"{credential.common_name}.ovpn",
+        )
+
+    async def _delivery_from_existing_credentials(
+        self,
+        subscription: Subscription,
+    ) -> ServiceConfigDelivery | None:
+        if subscription.id is None:
+            return None
+        credentials = await self._openvpn_service.get_configs_for_subscription(
+            subscription.user_id,
+            subscription.id,
+        )
+        for credential in credentials:
+            if self._is_valid_ovpn(credential.ovpn_content):
+                return self._credential_delivery(subscription, credential)
+        return None
+
+    async def _ensure_delivery_for_subscription(
+        self,
+        subscription: Subscription,
+    ) -> ServiceConfigDelivery | None:
+        existing = await self._delivery_from_existing_credentials(subscription)
+        if existing:
+            return existing
         try:
-            return await self._deliver_service(subscription)
+            return await self._deliver_service(subscription, allow_existing=False)
         except HTTPException as exc:
-            LOGGER.warning(
-                "Service delivery failed for subscription %s: %s",
+            LOGGER.error(
+                "OpenVPN provisioning failed for subscription %s: %s",
                 subscription.id,
                 exc.detail,
             )
-            return None
+            return await self._delivery_from_existing_credentials(subscription)
 
-    async def _deliver_service(self, subscription: Subscription) -> ServiceConfigDelivery:
+    async def _deliver_service(
+        self,
+        subscription: Subscription,
+        *,
+        allow_existing: bool = True,
+    ) -> ServiceConfigDelivery:
+        if allow_existing:
+            existing = await self._delivery_from_existing_credentials(subscription)
+            if existing:
+                return existing
+
         if subscription.service_type == "openvpn":
             servers = await self._server_service.list_servers(ListServersQuery())
             server = next(
@@ -683,13 +805,12 @@ class BotGatewayService:
             if not result.credentials:
                 raise HTTPException(status_code=500, detail="OpenVPN provisioning failed")
             credential = result.credentials[0]
-            return ServiceConfigDelivery(
-                service_type=subscription.service_type,
-                subscription_id=subscription.id,
-                delivery_type="file",
-                content=credential.ovpn_content,
-                filename=f"{credential.common_name}.ovpn",
-            )
+            if not self._is_valid_ovpn(credential.ovpn_content):
+                raise HTTPException(
+                    status_code=502,
+                    detail="OpenVPN node returned invalid configuration (check MOCK_MODE=false)",
+                )
+            return self._credential_delivery(subscription, credential)
 
         if subscription.service_type == "v2ray":
             url = f"{self._subscription_base_url}/sub/{subscription.uuid}"

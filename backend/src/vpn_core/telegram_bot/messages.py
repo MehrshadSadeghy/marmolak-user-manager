@@ -14,6 +14,16 @@ PURPOSE_FA = {
 }
 
 
+def wallet_recharged_message(balance: int) -> str:
+    return (
+        "✅ <b>موجودی حساب شما با موفقیت شارژ شد.</b>\n\n"
+        f"💰 موجودی فعلی: <b>{format_toman(balance)}</b>\n\n"
+        "🛒 اکنون می‌توانید از بخش «خرید سرویس جدید» سرویس VPN تهیه کنید.\n\n"
+        "<i>Your account balance has been successfully recharged. "
+        "You can now purchase a VPN service from the bot.</i>"
+    )
+
+
 def format_toman(amount: int) -> str:
     return f"{amount:,} تومان"
 

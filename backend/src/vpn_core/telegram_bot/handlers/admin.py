@@ -1,3 +1,5 @@
+import logging
+
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
@@ -7,12 +9,15 @@ from vpn_core.telegram_bot.config import TelegramBotConfig
 from vpn_core.telegram_bot.handlers.common import (
     guard_admin_callback,
     handle_admin_api_error,
+    notify_user_chat,
+    resolve_purchase_delivery,
     send_delivery_to_chat,
 )
 from vpn_core.telegram_bot.keyboards.main import admin_menu_keyboard, admin_plans_keyboard, admin_services_keyboard, buy_now_keyboard
-from vpn_core.telegram_bot.messages import PURPOSE_FA, format_toman
+from vpn_core.telegram_bot.messages import PURPOSE_FA, format_toman, wallet_recharged_message
 
 router = Router()
+LOGGER = logging.getLogger(__name__)
 
 
 @router.callback_query(F.data == "menu:admin")
@@ -128,20 +133,22 @@ async def admin_approve(callback: CallbackQuery, api: UserManagerApiClient, bot_
         if await handle_admin_api_error(callback, exc):
             return
         raise
+
+    user_chat_id = result["user_chat_id"]
+    user_telegram_id = result["user_telegram_id"]
+    purpose = result.get("purpose")
+    purchase = result.get("purchase")
+    delivery = await resolve_purchase_delivery(api, user_telegram_id, result)
+
     text = (
         f"✅ پرداخت #{payment_id} تأیید شد.\n"
-        f"👤 کاربر: {result['user_telegram_id']}\n"
+        f"👤 کاربر: {user_telegram_id}\n"
         f"💰 موجودی کاربر: {format_toman(result['wallet_balance_toman'])}"
     )
-    purchase = result.get("purchase")
-    delivery = purchase.get("delivery") if purchase else None
-    purpose = result.get("purpose")
-    user_chat_id = result["user_chat_id"]
-
     if purchase and not delivery:
         text += (
             "\n\n⚠️ سرویس فعال شد ولی کانفیگ ارسال نشد.\n"
-            "احتمالاً سرور OpenVPN تنظیم نشده — از پنل سرورها بررسی کن."
+            "کاربر می‌تواند از «سرویس‌های من» دانلود کند."
         )
 
     if message.caption is not None:
@@ -150,32 +157,40 @@ async def admin_approve(callback: CallbackQuery, api: UserManagerApiClient, bot_
         await message.edit_text(text, parse_mode="HTML")
 
     if purpose == PaymentPurpose.topup.value:
-        await message.bot.send_message(
+        notified = await notify_user_chat(
+            message.bot,
             user_chat_id,
-            "✅ <b>شارژ کیف پول تأیید شد!</b>\n\n"
-            f"💰 موجودی جدید: <b>{format_toman(result['wallet_balance_toman'])}</b>",
+            wallet_recharged_message(result["wallet_balance_toman"]),
             reply_markup=buy_now_keyboard(),
-            parse_mode="HTML",
         )
+        if not notified:
+            text += "\n\n⚠️ ارسال پیام به کاربر ناموفق بود (شاید ربات را /start نکرده)."
     elif delivery:
-        await message.bot.send_message(
+        await notify_user_chat(
+            message.bot,
             user_chat_id,
-            "✅ <b>پرداخت شما تأیید شد!</b>\n\n"
-            "📩 فایل کانفیگ در پیام بعدی ارسال می‌شود.",
-            parse_mode="HTML",
+            "✅ <b>پرداخت شما تأیید شد!</b>\n\n📩 فایل کانفیگ در پیام بعدی ارسال می‌شود.",
         )
-        await send_delivery_to_chat(
+        sent = await send_delivery_to_chat(
             message.bot,
             user_chat_id,
             delivery,
             reply_markup=buy_now_keyboard(),
         )
+        if not sent:
+            await notify_user_chat(
+                message.bot,
+                user_chat_id,
+                "⚠️ ارسال فایل کانفیگ ناموفق بود. از منوی «سرویس‌های من» دوباره تلاش کن.",
+                reply_markup=buy_now_keyboard(),
+            )
     elif purchase:
-        await message.bot.send_message(
+        await notify_user_chat(
+            message.bot,
             user_chat_id,
-            "✅ <b>پرداخت شما تأیید شد و سرویس فعال شد!</b>",
+            "✅ <b>پرداخت شما تأیید شد و سرویس فعال شد!</b>\n\n"
+            "📦 برای دریافت فایل .ovpn به «سرویس‌های من» برو.",
             reply_markup=buy_now_keyboard(),
-            parse_mode="HTML",
         )
 
     await callback.answer("✅ تأیید شد")
@@ -188,5 +203,8 @@ async def admin_reject(callback: CallbackQuery, api: UserManagerApiClient, bot_c
         return
     payment_id = int(callback.data.rsplit(":", 1)[1])
     await api.reject_payment(str(callback.from_user.id), payment_id)
-    await message.edit_caption(f"❌ پرداخت #{payment_id} رد شد.")
+    if message.caption is not None:
+        await message.edit_caption(f"❌ پرداخت #{payment_id} رد شد.")
+    else:
+        await message.edit_text(f"❌ پرداخت #{payment_id} رد شد.")
     await callback.answer("❌ رد شد")

@@ -86,6 +86,7 @@ class UserServiceItemDTO(BaseModel):
     remaining_bytes: int
     remaining_data_label: str
     expire_at: str
+    config_ids: list[str] = Field(default_factory=list)
 
 
 class UserServicesResponseDTO(BaseModel):

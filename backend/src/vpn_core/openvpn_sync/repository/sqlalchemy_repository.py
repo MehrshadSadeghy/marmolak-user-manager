@@ -91,6 +91,23 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
         )
         return _credential_from_orm(obj) if obj else None
 
+    async def list_by_subscription(
+        self,
+        subscription_id: int,
+        *,
+        user_id: int | None = None,
+        status: OpenVpnConfigStatus | None = None,
+    ) -> list[OpenVpnClientCredential]:
+        q = self._session.query(OpenVpnClientCredentialORM).filter(
+            OpenVpnClientCredentialORM.subscription_id == subscription_id
+        )
+        if user_id is not None:
+            q = q.filter(OpenVpnClientCredentialORM.user_id == user_id)
+        if status is not None:
+            q = q.filter(OpenVpnClientCredentialORM.status == status.value)
+        rows = q.order_by(OpenVpnClientCredentialORM.id.desc()).all()
+        return [_credential_from_orm(row) for row in rows]
+
     async def list_by_user(
         self,
         user_id: int,

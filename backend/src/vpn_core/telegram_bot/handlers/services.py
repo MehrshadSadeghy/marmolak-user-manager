@@ -1,14 +1,21 @@
+import httpx
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from vpn_core.billing_domain.domain.payment_request import PaymentPurpose
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
-from vpn_core.telegram_bot.handlers.common import send_delivery
+from vpn_core.telegram_bot.handlers.common import (
+    resolve_purchase_delivery,
+    send_delivery,
+    send_delivery_to_chat,
+)
 from vpn_core.telegram_bot.keyboards.main import (
+    back_to_menu_keyboard,
     buy_now_keyboard,
     payment_methods_keyboard,
     plans_keyboard,
     renew_services_keyboard,
+    user_services_keyboard,
 )
 from vpn_core.telegram_bot.messages import format_payment_method_display, format_toman, status_label_fa
 
@@ -41,11 +48,57 @@ async def menu_services(callback: CallbackQuery, api: UserManagerApiClient) -> N
                 f"⏳ باقی‌مانده: {item['remaining_days']} روز · 📊 {item['remaining_data_label']}"
             )
         await message.edit_text(
-            "📦 <b>سرویس‌های من</b>\n\n" + "\n\n".join(lines),
-            reply_markup=buy_now_keyboard(),
+            "📦 <b>سرویس‌های من</b>\n\n"
+            + "\n\n".join(lines)
+            + "\n\n👇 برای دریافت فایل .ovpn، دکمه مربوطه را بزن:",
+            reply_markup=user_services_keyboard(services),
             parse_mode="HTML",
         )
     await callback.answer("📦 سرویس‌های شما")
+
+
+@router.callback_query(F.data.startswith("download:sub:"))
+async def download_subscription_config(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    subscription_id = int(callback.data.rsplit(":", 1)[1])
+    tg_id = str(callback.from_user.id)
+    try:
+        delivery = await api.get_subscription_delivery(tg_id, subscription_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            await callback.answer(
+                "❌ فایل کانفیگ یافت نشد. با پشتیبانی تماس بگیر.",
+                show_alert=True,
+            )
+            return
+        raise
+    await send_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
+    await callback.answer("📥 فایل ارسال شد")
+
+
+@router.callback_query(F.data.startswith("download:config:"))
+async def download_config_by_id(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    config_id = callback.data.rsplit(":", 1)[1]
+    tg_id = str(callback.from_user.id)
+    try:
+        delivery = await api.get_openvpn_config_delivery(tg_id, config_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            await callback.answer(
+                "❌ فایل کانفیگ یافت نشد. با پشتیبانی تماس بگیر.",
+                show_alert=True,
+            )
+            return
+        raise
+    await send_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
+    await callback.answer("📥 فایل ارسال شد")
 
 
 @router.callback_query(F.data == "menu:renew")
@@ -125,7 +178,8 @@ async def renew_plan(callback: CallbackQuery, api: UserManagerApiClient) -> None
             "📩 کانفیگ در پیام بعدی ارسال می‌شود.",
             parse_mode="HTML",
         )
-        await send_delivery(message, result.get("delivery"))
+        delivery = await resolve_purchase_delivery(api, tg_id, result)
+        await send_delivery(message, delivery)
         await callback.answer("✅ تمدید موفق!")
     else:
         methods = await api.list_payment_methods()

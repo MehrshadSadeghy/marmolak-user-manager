@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
@@ -5,6 +7,8 @@ from vpn_core.telegram_bot.config import TelegramBotConfig
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.keyboards.main import buy_now_keyboard
+
+LOGGER = logging.getLogger(__name__)
 
 
 def telegram_id(message: Message) -> str:
@@ -23,6 +27,22 @@ async def ensure_user(api: UserManagerApiClient, message: Message) -> dict:
     return await api.register_user(telegram_id(message), chat_id(message), username(message))
 
 
+async def notify_user_chat(
+    bot,
+    chat_id: str | int,
+    text: str,
+    *,
+    reply_markup=None,
+    parse_mode: str = "HTML",
+) -> bool:
+    try:
+        await bot.send_message(int(chat_id), text, reply_markup=reply_markup, parse_mode=parse_mode)
+        return True
+    except Exception:
+        LOGGER.exception("Failed to send notification to chat_id=%s", chat_id)
+        return False
+
+
 async def send_delivery(message: Message, delivery: dict) -> None:
     await send_delivery_to_chat(
         message.bot,
@@ -38,36 +58,76 @@ async def send_delivery_to_chat(
     delivery: dict,
     *,
     reply_markup=None,
-) -> None:
+) -> bool:
     if not delivery:
-        return
-    if delivery["delivery_type"] == "file":
-        document = BufferedInputFile(
-            delivery["content"].encode("utf-8"),
-            filename=delivery.get("filename") or "config.ovpn",
+        return False
+    try:
+        if delivery["delivery_type"] == "file":
+            document = BufferedInputFile(
+                delivery["content"].encode("utf-8"),
+                filename=delivery.get("filename") or "config.ovpn",
+            )
+            config_id = delivery.get("filename", "").removesuffix(".ovpn") or "—"
+            await bot.send_document(
+                int(chat_id),
+                document,
+                caption=(
+                    "🎉 <b>سرویس شما آماده است!</b>\n\n"
+                    f"🆔 کد کانفیگ: <code>{config_id}</code>\n"
+                    "📂 فایل کانفیگ OpenVPN\n"
+                    "⚡ همین الان وارد شو و لذت ببر!"
+                ),
+                reply_markup=reply_markup,
+                parse_mode="HTML",
+            )
+        else:
+            await bot.send_message(
+                int(chat_id),
+                "🎉 <b>لینک سرویس V2Ray شما:</b>\n\n"
+                f"🔗 <code>{delivery['content']}</code>\n\n"
+                "⚡ لینک را در برنامه V2Ray وارد کن.",
+                reply_markup=reply_markup,
+                parse_mode="HTML",
+            )
+        return True
+    except Exception:
+        LOGGER.exception("Failed to deliver configuration to chat_id=%s", chat_id)
+        return False
+
+
+async def resolve_purchase_delivery(
+    api: UserManagerApiClient,
+    telegram_id: str,
+    result: dict | None,
+) -> dict | None:
+    if not result:
+        return None
+
+    delivery = result.get("delivery")
+    if delivery:
+        return delivery
+
+    purchase = result.get("purchase")
+    if isinstance(purchase, dict) and purchase.get("delivery"):
+        return purchase["delivery"]
+
+    subscription = None
+    if isinstance(purchase, dict):
+        subscription = purchase.get("subscription")
+    subscription = subscription or result.get("subscription")
+    subscription_id = (subscription or {}).get("id")
+    if not subscription_id:
+        return None
+
+    try:
+        return await api.get_subscription_delivery(telegram_id, subscription_id)
+    except httpx.HTTPStatusError:
+        LOGGER.warning(
+            "Could not resolve delivery for subscription %s (telegram_id=%s)",
+            subscription_id,
+            telegram_id,
         )
-        config_id = delivery.get("filename", "").removesuffix(".ovpn") or "—"
-        await bot.send_document(
-            chat_id,
-            document,
-            caption=(
-                "🎉 <b>سرویس شما آماده است!</b>\n\n"
-                f"🆔 کد کانفیگ: <code>{config_id}</code>\n"
-                "📂 فایل کانفیگ OpenVPN\n"
-                "⚡ همین الان وارد شو و لذت ببر!"
-            ),
-            reply_markup=reply_markup,
-            parse_mode="HTML",
-        )
-    else:
-        await bot.send_message(
-            chat_id,
-            "🎉 <b>لینک سرویس V2Ray شما:</b>\n\n"
-            f"🔗 <code>{delivery['content']}</code>\n\n"
-            "⚡ لینک را در برنامه V2Ray وارد کن.",
-            reply_markup=reply_markup,
-            parse_mode="HTML",
-        )
+        return None
 
 
 ADMIN_FORBIDDEN_MESSAGE = (

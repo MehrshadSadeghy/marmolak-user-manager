@@ -27,6 +27,16 @@ class OpenVpnCredentialRepository(ABC):
         pass
 
     @abstractmethod
+    async def list_by_subscription(
+        self,
+        subscription_id: int,
+        *,
+        user_id: int | None = None,
+        status: OpenVpnConfigStatus | None = None,
+    ) -> list[OpenVpnClientCredential]:
+        pass
+
+    @abstractmethod
     async def list_by_user(
         self,
         user_id: int,

@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery
 
 from vpn_core.billing_domain.domain.payment_request import PaymentPurpose
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
-from vpn_core.telegram_bot.handlers.common import send_delivery
+from vpn_core.telegram_bot.handlers.common import resolve_purchase_delivery, send_delivery
 from vpn_core.telegram_bot.keyboards.main import (
     back_to_menu_keyboard,
     payment_methods_keyboard,
@@ -81,7 +81,15 @@ async def select_plan(callback: CallbackQuery, api: UserManagerApiClient) -> Non
             "📩 کانفیگ سرویس در پیام بعدی ارسال می‌شود.",
             parse_mode="HTML",
         )
-        await send_delivery(message, result.get("delivery"))
+        delivery = await resolve_purchase_delivery(api, tg_id, result)
+        await send_delivery(message, delivery)
+        if not delivery:
+            await message.answer(
+                "⚠️ سرویس فعال شد اما ارسال خودکار کانفیگ ناموفق بود.\n"
+                "📦 از منوی «سرویس‌های من» می‌توانی فایل .ovpn را دریافت کنی.",
+                reply_markup=back_to_menu_keyboard(),
+                parse_mode="HTML",
+            )
         await callback.answer("✅ خرید موفق!")
     else:
         methods = await api.list_payment_methods()

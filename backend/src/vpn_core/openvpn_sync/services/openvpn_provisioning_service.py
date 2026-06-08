@@ -147,6 +147,20 @@ class OpenVpnProvisioningService:
     ) -> OpenVpnClientCredential | None:
         return await self._credential_repository.get_by_common_name_for_user(config_id, user_id)
 
+    async def get_configs_for_subscription(
+        self,
+        user_id: int,
+        subscription_id: int,
+        *,
+        active_only: bool = True,
+    ) -> list[OpenVpnClientCredential]:
+        status = OpenVpnConfigStatus.active if active_only else None
+        return await self._credential_repository.list_by_subscription(
+            subscription_id,
+            user_id=user_id,
+            status=status,
+        )
+
     async def list_configs(
         self,
         user_id: int,

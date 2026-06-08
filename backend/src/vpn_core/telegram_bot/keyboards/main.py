@@ -71,6 +71,36 @@ def payment_methods_keyboard(methods: list[dict], prefix: str) -> InlineKeyboard
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def user_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for item in services:
+        subscription_id = item["subscription_id"]
+        if item.get("service_type") == "openvpn":
+            config_ids = item.get("config_ids") or []
+            if config_ids:
+                for config_id in config_ids:
+                    rows.append(
+                        [
+                            InlineKeyboardButton(
+                                text=f"📥 دریافت .ovpn — {config_id}",
+                                callback_data=f"download:config:{config_id}",
+                            )
+                        ]
+                    )
+            else:
+                rows.append(
+                    [
+                        InlineKeyboardButton(
+                            text=f"📥 دریافت فایل .ovpn — #{subscription_id}",
+                            callback_data=f"download:sub:{subscription_id}",
+                        )
+                    ]
+                )
+    rows.append([InlineKeyboardButton(text="🛒 خرید سرویس جدید", callback_data="menu:buy")])
+    rows.append([InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="menu:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def renew_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
     from vpn_core.telegram_bot.messages import status_label_fa
 
