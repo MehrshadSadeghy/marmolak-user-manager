@@ -76,6 +76,8 @@ async def receive_config_id(
         f"📦 اشتراک: <b>#{result['subscription_id']}</b>\n"
         f"📌 وضعیت: {status}\n"
         f"⏳ زمان باقی‌مانده: <b>{result['remaining_days']} روز</b>\n"
+        f"📈 حجم مصرف‌شده: <b>{result['used_data_label']}</b>\n"
+        f"📦 سقف حجم: <b>{result['limit_data_label']}</b>\n"
         f"📉 حجم باقی‌مانده: <b>{result['remaining_data_label']}</b>\n"
         f"📅 انقضا: {result['expire_at'][:10]}",
         reply_markup=main_menu_keyboard(is_admin),

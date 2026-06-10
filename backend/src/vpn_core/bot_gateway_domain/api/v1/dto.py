@@ -137,6 +137,10 @@ class ConfigTrafficStatusDTO(BaseModel):
     status_label: str
     is_active: bool
     remaining_days: int
+    traffic_used_bytes: int
+    traffic_limit_bytes: int
+    used_data_label: str
+    limit_data_label: str
     remaining_bytes: int
     remaining_data_label: str
     expire_at: str

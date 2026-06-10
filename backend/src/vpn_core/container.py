@@ -196,5 +196,6 @@ class AppContainer:
             openvpn_endpoint_service=self.build_openvpn_endpoint_service(session),
             server_service=self.build_server_service(session),
             user_admin_service=self.build_user_admin_service(session),
+            traffic_enforcement_service=self.build_openvpn_traffic_enforcement_service(session),
             subscription_base_url=self.get_subscription_base_url(),
         )

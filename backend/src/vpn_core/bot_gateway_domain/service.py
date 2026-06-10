@@ -21,6 +21,9 @@ from vpn_core.openvpn_sync.domain.commands import ProvisionOpenVpnCommand
 from vpn_core.openvpn_sync.domain.openvpn_client_credential import OpenVpnConfigStatus
 from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
+from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
+    OpenVpnTrafficEnforcementService,
+)
 from vpn_core.server_management_domain.domain.queries import ListServersQuery
 from vpn_core.server_management_domain.service import ServerService
 from vpn_core.subscription_domain.domain.commands import (
@@ -88,6 +91,8 @@ class ConfigTrafficSummary:
     status_label: str
     is_active: bool
     remaining_days: int
+    traffic_used_bytes: int
+    traffic_limit_bytes: int
     remaining_bytes: int
     expire_at: datetime
 
@@ -113,6 +118,7 @@ class BotGatewayService:
         openvpn_endpoint_service: OpenVpnEndpointService,
         server_service: ServerService,
         user_admin_service: UserAdminService,
+        traffic_enforcement_service: OpenVpnTrafficEnforcementService,
         subscription_base_url: str,
     ):
         self._subscription_service = subscription_service
@@ -122,6 +128,7 @@ class BotGatewayService:
         self._openvpn_endpoint_service = openvpn_endpoint_service
         self._server_service = server_service
         self._user_admin_service = user_admin_service
+        self._traffic_enforcement_service = traffic_enforcement_service
         self._subscription_base_url = subscription_base_url.rstrip("/")
 
     async def register_user(
@@ -491,6 +498,11 @@ class BotGatewayService:
         if len(config_id) != 10 or not config_id.isdigit():
             raise HTTPException(status_code=400, detail="Config ID must be exactly 10 digits")
 
+        try:
+            await self._traffic_enforcement_service.sync_and_enforce()
+        except Exception:
+            LOGGER.exception("Live traffic sync failed before config-traffic lookup")
+
         credential = await self._openvpn_service.get_config_by_config_id(user_id, config_id)
         if not credential:
             raise HTTPException(status_code=404, detail="Config not found")
@@ -531,6 +543,8 @@ class BotGatewayService:
             status_label=status_label,
             is_active=is_active,
             remaining_days=remaining_days,
+            traffic_used_bytes=subscription.traffic_used_bytes,
+            traffic_limit_bytes=subscription.traffic_limit_bytes,
             remaining_bytes=remaining_bytes,
             expire_at=subscription.expire_at,
         )
