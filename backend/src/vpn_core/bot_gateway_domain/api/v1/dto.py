@@ -113,6 +113,7 @@ class WalletResponseDTO(BaseModel):
 class PurchaseRequestDTO(BaseModel):
     telegram_id: str
     plan_id: int
+    server_id: int | None = None
 
 
 class TopupRequestDTO(BaseModel):
@@ -163,17 +164,29 @@ class PendingPaymentsResponseDTO(BaseModel):
     payments: list[PaymentRequest]
 
 
-class AdminOpenVpnServerSummaryDTO(BaseModel):
+class OpenVpnServerSummaryDTO(BaseModel):
     id: int
     name: str
     vpn_host: str
     vpn_port: int
     vpn_proto: str
     status: str
+    max_users: int
+    current_users: int
+    is_full: bool
+    remaining_slots: int
+
+
+class AdminOpenVpnServerSummaryDTO(OpenVpnServerSummaryDTO):
+    pass
 
 
 class AdminOpenVpnServerListResponseDTO(BaseModel):
     servers: list[AdminOpenVpnServerSummaryDTO]
+
+
+class OpenVpnServerListResponseDTO(BaseModel):
+    servers: list[OpenVpnServerSummaryDTO]
 
 
 class ApplyOpenVpnEndpointDTO(BaseModel):

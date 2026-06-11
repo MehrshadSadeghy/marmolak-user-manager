@@ -67,6 +67,10 @@ class OpenVpnCredentialRepository(ABC):
         pass
 
     @abstractmethod
+    async def count_active_by_server(self, server_id: int) -> int:
+        pass
+
+    @abstractmethod
     async def update_last_status_bytes(
         self,
         credential_id: int,

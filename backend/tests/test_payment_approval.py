@@ -31,6 +31,7 @@ def _service(**overrides) -> BotGatewayService:
     openvpn_service = AsyncMock()
     openvpn_endpoint_service = AsyncMock()
     server_service = AsyncMock()
+    capacity_service = AsyncMock()
     traffic_enforcement_service = AsyncMock()
     user_admin_service = AsyncMock()
     user_admin_service.is_user_blocked.return_value = False
@@ -48,6 +49,7 @@ def _service(**overrides) -> BotGatewayService:
         openvpn_service=openvpn_service,
         openvpn_endpoint_service=openvpn_endpoint_service,
         server_service=server_service,
+        capacity_service=capacity_service,
         user_admin_service=user_admin_service,
         traffic_enforcement_service=traffic_enforcement_service,
         subscription_base_url="https://example.com",

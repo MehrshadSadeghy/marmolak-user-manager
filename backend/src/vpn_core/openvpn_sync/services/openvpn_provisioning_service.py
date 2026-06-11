@@ -13,6 +13,7 @@ from vpn_core.openvpn_sync.domain.openvpn_user import OpenVpnUser
 from vpn_core.openvpn_sync.domain.sync_result import ProvisioningResult, SyncOperationResult, SyncStatus
 from vpn_core.openvpn_sync.repository.base import OpenVpnCredentialRepository
 from vpn_core.openvpn_sync.services.helpers import generate_config_id, node_api_configured
+from vpn_core.openvpn_sync.services.server_capacity_service import ServerCapacityService
 from vpn_core.server_management_domain.domain.queries import GetServerQuery
 from vpn_core.server_management_domain.service import ServerService
 from vpn_core.subscription_domain.domain.queries import (
@@ -35,10 +36,12 @@ class OpenVpnProvisioningService:
         server_service: ServerService,
         subscription_repository: SubscriptionRepository,
         credential_repository: OpenVpnCredentialRepository,
+        capacity_service: ServerCapacityService,
     ):
         self._server_service = server_service
         self._subscription_repository = subscription_repository
         self._credential_repository = credential_repository
+        self._capacity_service = capacity_service
         self._client = OpenVpnClientFactory.create()
 
     def _validate_server(self, server) -> None:
@@ -70,6 +73,7 @@ class OpenVpnProvisioningService:
 
         server = await self._server_service.get_server(GetServerQuery(server_id=command.server_id))
         self._validate_server(server)
+        await self._capacity_service.assert_server_has_capacity(command.server_id)
 
         credentials: list[OpenVpnClientCredential] = []
         results: list[SyncOperationResult] = []
@@ -125,6 +129,8 @@ class OpenVpnProvisioningService:
 
         if not credentials:
             raise HTTPException(status_code=502, detail="OpenVPN provisioning failed on node")
+
+        await self._capacity_service.sync_current_users(command.server_id)
 
         return ProvisioningResult(
             credentials=credentials,
@@ -192,4 +198,5 @@ class OpenVpnProvisioningService:
                     LOGGER.warning("Node delete failed for %s: %s", cfg.common_name, exc)
             if await self._credential_repository.revoke(cfg.id):
                 revoked += 1
+                await self._capacity_service.sync_current_users(cfg.server_id)
         return revoked

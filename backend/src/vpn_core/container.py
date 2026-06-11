@@ -26,6 +26,7 @@ from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
 )
 from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
+from vpn_core.openvpn_sync.services.server_capacity_service import ServerCapacityService
 from vpn_core.openvpn_sync.client.factory import OpenVpnClientFactory
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
     OpenVpnTrafficEnforcementService,
@@ -151,11 +152,18 @@ class AppContainer:
     def build_server_service(self, session: Session) -> ServerService:
         return ServerService(repository=ServerDBRepository(session=session))
 
+    def build_server_capacity_service(self, session: Session) -> ServerCapacityService:
+        return ServerCapacityService(
+            credential_repository=OpenVpnCredentialDBRepository(session=session),
+            server_service=self.build_server_service(session),
+        )
+
     def build_openvpn_provisioning_service(self, session: Session) -> OpenVpnProvisioningService:
         return OpenVpnProvisioningService(
             server_service=self.build_server_service(session),
             subscription_repository=SubscriptionDBRepository(session=session),
             credential_repository=OpenVpnCredentialDBRepository(session=session),
+            capacity_service=self.build_server_capacity_service(session),
         )
 
     def build_openvpn_traffic_service(self, session: Session) -> OpenVpnTrafficService:
@@ -195,6 +203,7 @@ class AppContainer:
             openvpn_service=self.build_openvpn_provisioning_service(session),
             openvpn_endpoint_service=self.build_openvpn_endpoint_service(session),
             server_service=self.build_server_service(session),
+            capacity_service=self.build_server_capacity_service(session),
             user_admin_service=self.build_user_admin_service(session),
             traffic_enforcement_service=self.build_openvpn_traffic_enforcement_service(session),
             subscription_base_url=self.get_subscription_base_url(),

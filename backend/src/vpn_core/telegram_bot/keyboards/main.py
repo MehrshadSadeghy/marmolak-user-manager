@@ -44,7 +44,12 @@ def services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def plans_keyboard(plans: list[dict], prefix: str) -> InlineKeyboardMarkup:
+def plans_keyboard(
+    plans: list[dict],
+    prefix: str,
+    *,
+    back_callback: str = "menu:home",
+) -> InlineKeyboardMarkup:
     rows = []
     for plan in plans:
         gb = plan["traffic_limit_bytes"] / (1024**3)
@@ -54,7 +59,35 @@ def plans_keyboard(plans: list[dict], prefix: str) -> InlineKeyboardMarkup:
             f"{price_label}"
         )
         rows.append([InlineKeyboardButton(text=label, callback_data=f"{prefix}:plan:{plan['id']}")])
-    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:home")])
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data=back_callback)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def openvpn_servers_purchase_keyboard(servers: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for server in servers:
+        capacity = f"{server['current_users']}/{server['max_users']}"
+        if server.get("is_full"):
+            label = f"🔴 {server['name']} — پر ({capacity})"
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=label,
+                        callback_data=f"buy:server-full:{server['id']}",
+                    )
+                ]
+            )
+        else:
+            label = f"🟢 {server['name']} — {capacity} ظرفیت"
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=label,
+                        callback_data=f"buy:server:{server['id']}",
+                    )
+                ]
+            )
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:buy")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -125,6 +158,7 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📋 پلن‌ها", callback_data="admin:plans")],
             [InlineKeyboardButton(text="💳 روش‌های پرداخت", callback_data="admin:payment-methods")],
             [InlineKeyboardButton(text="📊 گزارش مالی", callback_data="admin:report")],
+            [InlineKeyboardButton(text="🖥 سرورها و ظرفیت", callback_data="admin:servers")],
             [InlineKeyboardButton(text="🔌 OpenVPN پورت/پروتکل", callback_data="admin:openvpn-endpoint")],
             [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="menu:home")],
         ]
@@ -239,12 +273,19 @@ def admin_report_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def _server_capacity_label(server: dict) -> str:
+    capacity = f"{server['current_users']}/{server['max_users']}"
+    if server.get("is_full"):
+        return f"🔴 {server['name']} — پر ({capacity})"
+    return f"🟢 {server['name']} — {capacity} ظرفیت"
+
+
 def admin_openvpn_servers_keyboard(servers: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for server in servers:
         label = (
-            f"{server['name']} — {server['vpn_proto'].upper()}/{server['vpn_port']} "
-            f"({server['status']})"
+            f"{_server_capacity_label(server)} — "
+            f"{server['vpn_proto'].upper()}/{server['vpn_port']} ({server['status']})"
         )
         rows.append(
             [

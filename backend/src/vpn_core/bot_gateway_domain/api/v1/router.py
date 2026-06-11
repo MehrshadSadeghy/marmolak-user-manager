@@ -7,6 +7,8 @@ from vpn_core.bot_gateway_domain.api.v1.dto import (
     AdminPaymentReviewDTO,
     AdminOpenVpnServerListResponseDTO,
     AdminOpenVpnServerSummaryDTO,
+    OpenVpnServerListResponseDTO,
+    OpenVpnServerSummaryDTO,
     ApplyOpenVpnEndpointDTO,
     ApplyOpenVpnEndpointResponseDTO,
     ConfigTrafficLookupDTO,
@@ -128,7 +130,7 @@ async def preview_purchase(body: PurchaseRequestDTO, service: BotGatewayServiceD
     user = await service.get_user_by_telegram(body.telegram_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    preview = await service.preview_purchase(user.id, body.plan_id)
+    preview = await service.preview_purchase(user.id, body.plan_id, server_id=body.server_id)
     return PurchasePreviewDTO(
         plan=preview.plan,
         wallet_balance_toman=preview.wallet_balance_toman,
@@ -145,7 +147,7 @@ async def purchase(body: PurchaseRequestDTO, service: BotGatewayServiceDep) -> P
     user = await service.get_user_by_telegram(body.telegram_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    result = await service.purchase_with_wallet(user.id, body.plan_id)
+    result = await service.purchase_with_wallet(user.id, body.plan_id, server_id=body.server_id)
     return _purchase_result_dto(result)
 
 
@@ -368,21 +370,39 @@ async def approve_payment(
     )
 
 
+def _openvpn_server_summary_dto(item: dict) -> OpenVpnServerSummaryDTO:
+    server = item["server"]
+    return OpenVpnServerSummaryDTO(
+        id=server.id,
+        name=server.name,
+        vpn_host=server.openvpn.vpn_host or server.connection.host,
+        vpn_port=server.openvpn.vpn_port,
+        vpn_proto=server.openvpn.vpn_proto,
+        status=server.status.value,
+        max_users=item["max_users"],
+        current_users=item["current_users"],
+        is_full=item["is_full"],
+        remaining_slots=item["remaining_slots"],
+    )
+
+
+@router.get("/openvpn/servers", response_model=OpenVpnServerListResponseDTO)
+async def list_openvpn_servers_for_purchase(
+    service: BotGatewayServiceDep,
+) -> OpenVpnServerListResponseDTO:
+    servers = await service.list_openvpn_servers()
+    return OpenVpnServerListResponseDTO(
+        servers=[_openvpn_server_summary_dto(item) for item in servers]
+    )
+
+
 @admin_router.get("/servers/openvpn", response_model=AdminOpenVpnServerListResponseDTO)
 async def list_openvpn_servers(service: BotGatewayServiceDep) -> AdminOpenVpnServerListResponseDTO:
     servers = await service.list_openvpn_servers()
     return AdminOpenVpnServerListResponseDTO(
         servers=[
-            AdminOpenVpnServerSummaryDTO(
-                id=server.id,
-                name=server.name,
-                vpn_host=server.openvpn.vpn_host or server.connection.host,
-                vpn_port=server.openvpn.vpn_port,
-                vpn_proto=server.openvpn.vpn_proto,
-                status=server.status.value,
-            )
-            for server in servers
-            if server.id is not None
+            AdminOpenVpnServerSummaryDTO(**_openvpn_server_summary_dto(item).model_dump())
+            for item in servers
         ]
     )
 

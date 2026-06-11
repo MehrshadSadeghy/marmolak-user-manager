@@ -25,6 +25,7 @@ def _service(**overrides) -> BotGatewayService:
         openvpn_service=AsyncMock(),
         openvpn_endpoint_service=AsyncMock(),
         server_service=AsyncMock(),
+        capacity_service=AsyncMock(),
         user_admin_service=AsyncMock(),
         traffic_enforcement_service=traffic_enforcement_service,
         subscription_base_url="https://example.com",

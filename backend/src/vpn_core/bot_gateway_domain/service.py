@@ -21,10 +21,11 @@ from vpn_core.openvpn_sync.domain.commands import ProvisionOpenVpnCommand
 from vpn_core.openvpn_sync.domain.openvpn_client_credential import OpenVpnConfigStatus
 from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
+from vpn_core.openvpn_sync.services.server_capacity_service import ServerCapacityService
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
     OpenVpnTrafficEnforcementService,
 )
-from vpn_core.server_management_domain.domain.queries import ListServersQuery
+from vpn_core.server_management_domain.domain.queries import GetServerQuery, ListServersQuery
 from vpn_core.server_management_domain.service import ServerService
 from vpn_core.subscription_domain.domain.commands import (
     CreateSubscriptionCommand,
@@ -117,6 +118,7 @@ class BotGatewayService:
         openvpn_service: OpenVpnProvisioningService,
         openvpn_endpoint_service: OpenVpnEndpointService,
         server_service: ServerService,
+        capacity_service: ServerCapacityService,
         user_admin_service: UserAdminService,
         traffic_enforcement_service: OpenVpnTrafficEnforcementService,
         subscription_base_url: str,
@@ -127,6 +129,7 @@ class BotGatewayService:
         self._openvpn_service = openvpn_service
         self._openvpn_endpoint_service = openvpn_endpoint_service
         self._server_service = server_service
+        self._capacity_service = capacity_service
         self._user_admin_service = user_admin_service
         self._traffic_enforcement_service = traffic_enforcement_service
         self._subscription_base_url = subscription_base_url.rstrip("/")
@@ -176,9 +179,16 @@ class BotGatewayService:
         wallet = await self._billing_service.get_wallet(user_id)
         return wallet.balance_toman
 
-    async def preview_purchase(self, user_id: int, plan_id: int) -> PurchasePreview:
+    async def preview_purchase(
+        self,
+        user_id: int,
+        plan_id: int,
+        *,
+        server_id: int | None = None,
+    ) -> PurchasePreview:
         await self._user_admin_service.assert_user_not_blocked(user_id)
         plan = await self._get_active_plan(plan_id)
+        await self._validate_openvpn_server_for_purchase(plan, server_id, require_server=False)
         discounted_plan = await self._apply_plan_discount(user_id, plan)
         price_toman, discount_percent = await self._user_admin_service.apply_discounted_price(
             user_id,
@@ -202,8 +212,16 @@ class BotGatewayService:
         await self._user_admin_service.assert_user_not_blocked(user_id)
         return await self._fulfill_renewal_from_wallet(user_id, subscription_id, plan_id)
 
-    async def purchase_with_wallet(self, user_id: int, plan_id: int) -> PurchaseResult:
-        preview = await self.preview_purchase(user_id, plan_id)
+    async def purchase_with_wallet(
+        self,
+        user_id: int,
+        plan_id: int,
+        *,
+        server_id: int | None = None,
+    ) -> PurchaseResult:
+        preview = await self.preview_purchase(user_id, plan_id, server_id=server_id)
+        if preview.plan.service_type == "openvpn" and server_id is None:
+            raise HTTPException(status_code=400, detail="server_id is required for OpenVPN purchase")
         if not preview.sufficient_balance:
             raise HTTPException(status_code=400, detail="Insufficient wallet balance")
 
@@ -217,7 +235,7 @@ class BotGatewayService:
             )
         )
         subscription = await self._create_subscription(user_id, preview.plan)
-        delivery = await self._ensure_delivery_for_subscription(subscription)
+        delivery = await self._ensure_delivery_for_subscription(subscription, server_id=server_id)
         if not delivery:
             LOGGER.error(
                 "OpenVPN delivery failed after wallet purchase for subscription %s",
@@ -564,8 +582,15 @@ class BotGatewayService:
                 return request
         return None
 
-    async def _fulfill_purchase_from_wallet(self, user_id: int, plan_id: int) -> PurchaseResult:
+    async def _fulfill_purchase_from_wallet(
+        self,
+        user_id: int,
+        plan_id: int,
+        *,
+        server_id: int | None = None,
+    ) -> PurchaseResult:
         plan = await self._get_active_plan(plan_id)
+        await self._validate_openvpn_server_for_purchase(plan, server_id, require_server=True)
         await self._billing_service.debit_wallet(
             DebitWalletCommand(
                 user_id=user_id,
@@ -577,7 +602,7 @@ class BotGatewayService:
         )
         try:
             subscription = await self._create_subscription(user_id, plan)
-            delivery = await self._try_deliver(subscription)
+            delivery = await self._try_deliver(subscription, server_id=server_id)
         except HTTPException:
             await self._billing_service.credit_wallet(
                 CreditWalletCommand(
@@ -666,8 +691,13 @@ class BotGatewayService:
             raise HTTPException(status_code=400, detail="Service type is disabled")
         return plan
 
-    async def _try_deliver(self, subscription: Subscription) -> ServiceConfigDelivery | None:
-        delivery = await self._ensure_delivery_for_subscription(subscription)
+    async def _try_deliver(
+        self,
+        subscription: Subscription,
+        *,
+        server_id: int | None = None,
+    ) -> ServiceConfigDelivery | None:
+        delivery = await self._ensure_delivery_for_subscription(subscription, server_id=server_id)
         if delivery:
             return delivery
         LOGGER.error(
@@ -711,12 +741,18 @@ class BotGatewayService:
     async def _ensure_delivery_for_subscription(
         self,
         subscription: Subscription,
+        *,
+        server_id: int | None = None,
     ) -> ServiceConfigDelivery | None:
         existing = await self._delivery_from_existing_credentials(subscription)
         if existing:
             return existing
         try:
-            return await self._deliver_service(subscription, allow_existing=False)
+            return await self._deliver_service(
+                subscription,
+                allow_existing=False,
+                server_id=server_id,
+            )
         except HTTPException as exc:
             LOGGER.error(
                 "OpenVPN provisioning failed for subscription %s: %s",
@@ -730,6 +766,7 @@ class BotGatewayService:
         subscription: Subscription,
         *,
         allow_existing: bool = True,
+        server_id: int | None = None,
     ) -> ServiceConfigDelivery:
         if allow_existing:
             existing = await self._delivery_from_existing_credentials(subscription)
@@ -737,13 +774,7 @@ class BotGatewayService:
                 return existing
 
         if subscription.service_type == "openvpn":
-            servers = await self._server_service.list_servers(ListServersQuery())
-            server = next(
-                (s for s in servers if s.is_active and s.openvpn and s.openvpn.enabled),
-                None,
-            )
-            if not server:
-                raise HTTPException(status_code=400, detail="No active OpenVPN server available")
+            server = await self._resolve_openvpn_server(server_id)
             result = await self._openvpn_service.provision(
                 ProvisionOpenVpnCommand(
                     user_id=subscription.user_id,
@@ -785,7 +816,49 @@ class BotGatewayService:
         return f"{num_bytes} B"
 
     async def list_openvpn_servers(self):
-        return await self._openvpn_endpoint_service.list_openvpn_servers()
+        servers = await self._openvpn_endpoint_service.list_openvpn_servers()
+        summaries = []
+        for server in servers:
+            if server.id is None:
+                continue
+            snapshot = await self._capacity_service.get_server_capacity_snapshot(server)
+            summaries.append(
+                {
+                    "server": server,
+                    "max_users": snapshot.max_users,
+                    "current_users": snapshot.current_users,
+                    "is_full": snapshot.is_full,
+                    "remaining_slots": snapshot.remaining_slots,
+                }
+            )
+        return summaries
+
+    async def _validate_openvpn_server_for_purchase(
+        self,
+        plan: Plan,
+        server_id: int | None,
+        *,
+        require_server: bool = False,
+    ) -> None:
+        if plan.service_type != "openvpn":
+            return
+        if server_id is None:
+            if require_server:
+                raise HTTPException(
+                    status_code=400,
+                    detail="server_id is required for OpenVPN purchase",
+                )
+            return
+        await self._resolve_openvpn_server(server_id)
+        await self._capacity_service.assert_server_has_capacity(server_id)
+
+    async def _resolve_openvpn_server(self, server_id: int | None):
+        if server_id is None:
+            raise HTTPException(status_code=400, detail="server_id is required for OpenVPN")
+        server = await self._server_service.get_server(GetServerQuery(server_id=server_id))
+        if not server or not server.is_active or not server.openvpn.enabled:
+            raise HTTPException(status_code=400, detail="OpenVPN server not available")
+        return server
 
     async def apply_openvpn_endpoint(self, server_id: int, port: int, proto: str) -> dict:
         return await self._openvpn_endpoint_service.apply_endpoint(server_id, port, proto)

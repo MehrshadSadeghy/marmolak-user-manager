@@ -16,6 +16,55 @@ from vpn_core.telegram_bot.states import AdminFlow
 router = Router()
 
 
+def _format_server_capacity_lines(servers: list[dict]) -> list[str]:
+    lines = []
+    for server in servers:
+        capacity = f"{server['current_users']}/{server['max_users']}"
+        status = "🔴 پر" if server.get("is_full") else f"🟢 {server['remaining_slots']} ظرفیت باقی"
+        lines.append(
+            f"• <b>{server['name']}</b>\n"
+            f"  👥 {capacity} | {status}\n"
+            f"  🔌 {server['vpn_proto'].upper()}/{server['vpn_port']} | وضعیت: {server['status']}"
+        )
+    return lines
+
+
+@router.callback_query(F.data == "admin:servers")
+async def admin_servers_capacity(
+    callback: CallbackQuery,
+    api: UserManagerApiClient,
+    bot_config: TelegramBotConfig,
+    state: FSMContext,
+) -> None:
+    message = callback.message
+    if not message or not await guard_admin_callback(callback, bot_config):
+        return
+    await state.clear()
+    try:
+        servers = await api.list_openvpn_servers_admin(str(callback.from_user.id))
+    except Exception as exc:
+        if await handle_admin_api_error(callback, exc):
+            return
+        raise
+    if not servers:
+        await message.edit_text(
+            "⚠️ سرور OpenVPN فعالی یافت نشد.\n"
+            "ابتدا سرور را در user-manager با openvpn.enabled=true ثبت کن.",
+            reply_markup=admin_menu_keyboard(),
+            parse_mode="HTML",
+        )
+    else:
+        lines = _format_server_capacity_lines(servers)
+        await message.edit_text(
+            "🖥 <b>سرورها و ظرفیت</b>\n\n"
+            "تعداد کانفیگ‌های فعال هر سرور به‌صورت زنده از دیتابیس خوانده می‌شود.\n\n"
+            + "\n\n".join(lines),
+            reply_markup=admin_menu_keyboard(),
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "admin:openvpn-endpoint")
 async def admin_openvpn_endpoint_menu(
     callback: CallbackQuery,

@@ -168,6 +168,17 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
         )
         return [_credential_from_orm(row) for row in rows]
 
+    async def count_active_by_server(self, server_id: int) -> int:
+        count = (
+            self._session.query(func.count(OpenVpnClientCredentialORM.id))
+            .filter(
+                OpenVpnClientCredentialORM.server_id == server_id,
+                OpenVpnClientCredentialORM.status == OpenVpnConfigStatus.active.value,
+            )
+            .scalar()
+        )
+        return int(count or 0)
+
     async def update_last_status_bytes(
         self,
         credential_id: int,

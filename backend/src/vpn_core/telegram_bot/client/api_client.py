@@ -55,19 +55,33 @@ class UserManagerApiClient:
     async def get_user_access(self, telegram_id: str) -> dict:
         return await self._request("GET", f"/api/v1/bot/users/{telegram_id}/access")
 
-    async def preview_purchase(self, telegram_id: str, plan_id: int) -> dict:
-        return await self._request(
-            "POST",
-            "/api/v1/bot/purchase/preview",
-            json={"telegram_id": telegram_id, "plan_id": plan_id},
-        )
+    async def preview_purchase(
+        self,
+        telegram_id: str,
+        plan_id: int,
+        *,
+        server_id: int | None = None,
+    ) -> dict:
+        payload: dict = {"telegram_id": telegram_id, "plan_id": plan_id}
+        if server_id is not None:
+            payload["server_id"] = server_id
+        return await self._request("POST", "/api/v1/bot/purchase/preview", json=payload)
 
-    async def purchase(self, telegram_id: str, plan_id: int) -> dict:
-        return await self._request(
-            "POST",
-            "/api/v1/bot/purchase",
-            json={"telegram_id": telegram_id, "plan_id": plan_id},
-        )
+    async def purchase(
+        self,
+        telegram_id: str,
+        plan_id: int,
+        *,
+        server_id: int | None = None,
+    ) -> dict:
+        payload: dict = {"telegram_id": telegram_id, "plan_id": plan_id}
+        if server_id is not None:
+            payload["server_id"] = server_id
+        return await self._request("POST", "/api/v1/bot/purchase", json=payload)
+
+    async def list_openvpn_servers(self) -> list[dict]:
+        data = await self._request("GET", "/api/v1/bot/openvpn/servers")
+        return data["servers"]
 
     async def initiate_payment(self, payload: dict) -> dict:
         return await self._request("POST", "/api/v1/bot/payments/initiate", json=payload)
