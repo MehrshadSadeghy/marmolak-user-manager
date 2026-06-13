@@ -25,6 +25,9 @@ from vpn_core.openvpn_sync.services.server_capacity_service import ServerCapacit
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
     OpenVpnTrafficEnforcementService,
 )
+from vpn_core.openvpn_sync.services.subscription_expiry_enforcement_service import (
+    SubscriptionExpiryEnforcementService,
+)
 from vpn_core.server_management_domain.domain.queries import GetServerQuery, ListServersQuery
 from vpn_core.server_management_domain.service import ServerService
 from vpn_core.subscription_domain.domain.commands import (
@@ -121,6 +124,7 @@ class BotGatewayService:
         capacity_service: ServerCapacityService,
         user_admin_service: UserAdminService,
         traffic_enforcement_service: OpenVpnTrafficEnforcementService,
+        expiry_enforcement_service: SubscriptionExpiryEnforcementService,
         subscription_base_url: str,
     ):
         self._subscription_service = subscription_service
@@ -132,6 +136,7 @@ class BotGatewayService:
         self._capacity_service = capacity_service
         self._user_admin_service = user_admin_service
         self._traffic_enforcement_service = traffic_enforcement_service
+        self._expiry_enforcement_service = expiry_enforcement_service
         self._subscription_base_url = subscription_base_url.rstrip("/")
 
     async def register_user(
@@ -407,6 +412,11 @@ class BotGatewayService:
         )
 
     async def list_user_services(self, user_id: int) -> list[UserServiceSummary]:
+        try:
+            await self._expiry_enforcement_service.enforce()
+        except Exception:
+            LOGGER.exception("Expiry enforcement failed before listing user services")
+
         subscriptions = await self._subscription_service.list_subscriptions(
             ListSubscriptionsQuery(user_id=user_id)
         )
@@ -430,7 +440,9 @@ class BotGatewayService:
                 )
             )
             status_label = subscription.status.value
-            if subscription.expire_at <= now and subscription.status == SubscriptionStatus.active:
+            if subscription.status == SubscriptionStatus.expired:
+                status_label = "expired"
+            elif subscription.expire_at <= now and subscription.status == SubscriptionStatus.active:
                 status_label = "expired"
             summaries.append(
                 UserServiceSummary(
@@ -517,6 +529,11 @@ class BotGatewayService:
             raise HTTPException(status_code=400, detail="Config ID must be exactly 10 digits")
 
         try:
+            await self._expiry_enforcement_service.enforce()
+        except Exception:
+            LOGGER.exception("Expiry enforcement failed before config-traffic lookup")
+
+        try:
             await self._traffic_enforcement_service.sync_and_enforce()
         except Exception:
             LOGGER.exception("Live traffic sync failed before config-traffic lookup")
@@ -552,6 +569,8 @@ class BotGatewayService:
         status_label = subscription.status.value
         if credential.status != OpenVpnConfigStatus.active:
             status_label = "disabled"
+        elif subscription.status == SubscriptionStatus.expired:
+            status_label = "expired"
         elif subscription.expire_at <= now and subscription.status == SubscriptionStatus.active:
             status_label = "expired"
 

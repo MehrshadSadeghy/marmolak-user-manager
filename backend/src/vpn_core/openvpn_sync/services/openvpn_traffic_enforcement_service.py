@@ -1,6 +1,7 @@
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from vpn_core.openvpn_sync.client.base import OpenVpnClient
 from vpn_core.openvpn_sync.domain.commands import DeactivateOpenVpnCommand
@@ -85,6 +86,8 @@ class OpenVpnTrafficEnforcementService:
                 )
                 if not subscription or subscription.status != SubscriptionStatus.active:
                     continue
+                if subscription.expire_at <= datetime.now(UTC):
+                    continue
 
                 subscriptions_seen.add(subscription.id)
                 current_bytes = traffic_map.get(credential.common_name, 0)
@@ -98,6 +101,8 @@ class OpenVpnTrafficEnforcementService:
                 GetSubscriptionQuery(subscription_id=subscription_id)
             )
             if not subscription or subscription.status != SubscriptionStatus.active:
+                continue
+            if subscription.expire_at <= datetime.now(UTC):
                 continue
             subscription.traffic_used_bytes += delta
             summary.bytes_accounted += delta
@@ -114,6 +119,8 @@ class OpenVpnTrafficEnforcementService:
                 GetSubscriptionQuery(subscription_id=subscription_id)
             )
             if not subscription or subscription.status != SubscriptionStatus.active:
+                continue
+            if subscription.expire_at <= datetime.now(UTC):
                 continue
             if (
                 subscription.traffic_limit_bytes > 0

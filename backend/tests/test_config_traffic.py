@@ -11,12 +11,17 @@ from vpn_core.openvpn_sync.domain.openvpn_client_credential import (
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
     TrafficEnforcementSummary,
 )
+from vpn_core.openvpn_sync.services.subscription_expiry_enforcement_service import (
+    ExpiryEnforcementSummary,
+)
 from vpn_core.subscription_domain.domain.subscription import Subscription, SubscriptionStatus
 
 
 def _service(**overrides) -> BotGatewayService:
     traffic_enforcement_service = AsyncMock()
     traffic_enforcement_service.sync_and_enforce.return_value = TrafficEnforcementSummary()
+    expiry_enforcement_service = AsyncMock()
+    expiry_enforcement_service.enforce.return_value = ExpiryEnforcementSummary()
 
     service = BotGatewayService(
         subscription_service=AsyncMock(),
@@ -28,6 +33,7 @@ def _service(**overrides) -> BotGatewayService:
         capacity_service=AsyncMock(),
         user_admin_service=AsyncMock(),
         traffic_enforcement_service=traffic_enforcement_service,
+        expiry_enforcement_service=expiry_enforcement_service,
         subscription_base_url="https://example.com",
     )
     for key, value in overrides.items():

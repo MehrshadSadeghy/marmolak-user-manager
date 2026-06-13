@@ -63,11 +63,21 @@ class OpenVpnProvisioningService:
                 raise HTTPException(status_code=404, detail="Subscription not found")
             if subscription.status != SubscriptionStatus.active:
                 raise HTTPException(status_code=400, detail="Subscription is not active")
+            if subscription.expire_at <= datetime.now(UTC):
+                raise HTTPException(status_code=400, detail="Subscription has expired")
         else:
             subs = await self._subscription_repository.list_subscriptions(
                 ListSubscriptionsQuery(user_id=command.user_id)
             )
-            subscription = next((s for s in subs if s.status == SubscriptionStatus.active), None)
+            now = datetime.now(UTC)
+            subscription = next(
+                (
+                    s
+                    for s in subs
+                    if s.status == SubscriptionStatus.active and s.expire_at > now
+                ),
+                None,
+            )
             if not subscription:
                 raise HTTPException(status_code=400, detail="No active subscription for user")
 

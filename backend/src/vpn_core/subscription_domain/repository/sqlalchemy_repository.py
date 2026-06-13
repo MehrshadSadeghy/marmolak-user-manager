@@ -155,6 +155,22 @@ class SubscriptionDBRepository(SubscriptionRepository):
         rows = db_query.all()
         return [Subscription.model_validate(row) for row in rows]
 
+    async def list_expired_active_subscriptions(self) -> list[Subscription]:
+        from datetime import UTC, datetime
+
+        from vpn_core.subscription_domain.domain.subscription import SubscriptionStatus
+
+        now = datetime.now(UTC)
+        rows = (
+            self._session.query(SubscriptionORM)
+            .filter(
+                SubscriptionORM.status == SubscriptionStatus.active,
+                SubscriptionORM.expire_at <= now,
+            )
+            .all()
+        )
+        return [Subscription.model_validate(row) for row in rows]
+
     async def update_subscription(self, subscription: Subscription) -> Subscription | None:
         obj = self._session.get(SubscriptionORM, subscription.id)
         if not obj:

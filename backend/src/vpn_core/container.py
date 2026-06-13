@@ -17,6 +17,7 @@ from vpn_core.config import APIConfig, Config, DatabaseConfig
 from vpn_core.core.db.postgres import Postgres
 from vpn_core.core.manager.api_manager import APIManager
 from vpn_core.core.manager.base import Manager
+from vpn_core.core.manager.expiry_enforcement_manager import ExpiryEnforcementManager
 from vpn_core.core.manager.traffic_enforcement_manager import TrafficEnforcementManager
 from vpn_core.core.manager.db_manager import PostgresManager
 from vpn_core.openvpn_sync.api.v1.router import router as openvpn_router
@@ -30,6 +31,9 @@ from vpn_core.openvpn_sync.services.server_capacity_service import ServerCapacit
 from vpn_core.openvpn_sync.client.factory import OpenVpnClientFactory
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
     OpenVpnTrafficEnforcementService,
+)
+from vpn_core.openvpn_sync.services.subscription_expiry_enforcement_service import (
+    SubscriptionExpiryEnforcementService,
 )
 from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTrafficService
 from vpn_core.server_management_domain.api.v1.router import router as server_router
@@ -123,11 +127,16 @@ class AppContainer:
         return TrafficEnforcementManager(container=self)
 
     @singleton
+    def get_expiry_enforcement_manager(self) -> ExpiryEnforcementManager:
+        return ExpiryEnforcementManager(container=self)
+
+    @singleton
     def get_managers(self) -> list[Manager]:
         managers: list[Manager] = [
             self.get_postgres_manager(),
             self.get_api_manager(),
             self.get_traffic_enforcement_manager(),
+            self.get_expiry_enforcement_manager(),
         ]
         bot_manager = self.get_telegram_bot_manager()
         if bot_manager:
@@ -195,6 +204,14 @@ class AppContainer:
             openvpn_client=OpenVpnClientFactory.create(),
         )
 
+    def build_subscription_expiry_enforcement_service(
+        self, session: Session
+    ) -> SubscriptionExpiryEnforcementService:
+        return SubscriptionExpiryEnforcementService(
+            subscription_repository=SubscriptionDBRepository(session=session),
+            provisioning_service=self.build_openvpn_provisioning_service(session),
+        )
+
     def build_bot_gateway_service(self, session: Session) -> BotGatewayService:
         return BotGatewayService(
             subscription_service=self.build_subscription_service(session),
@@ -206,5 +223,6 @@ class AppContainer:
             capacity_service=self.build_server_capacity_service(session),
             user_admin_service=self.build_user_admin_service(session),
             traffic_enforcement_service=self.build_openvpn_traffic_enforcement_service(session),
+            expiry_enforcement_service=self.build_subscription_expiry_enforcement_service(session),
             subscription_base_url=self.get_subscription_base_url(),
         )

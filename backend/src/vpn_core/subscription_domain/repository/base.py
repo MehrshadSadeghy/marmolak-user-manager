@@ -64,6 +64,10 @@ class SubscriptionRepository(ABC):
         pass
 
     @abstractmethod
+    async def list_expired_active_subscriptions(self) -> list[Subscription]:
+        pass
+
+    @abstractmethod
     async def update_subscription(self, subscription: Subscription) -> Subscription | None:
         pass
 
