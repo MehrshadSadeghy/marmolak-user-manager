@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery, Message
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
-from vpn_core.telegram_bot.handlers.common import guard_admin_callback, handle_admin_api_error
+from vpn_core.telegram_bot.handlers.common import guard_admin_callback, handle_admin_api_error, edit_callback_message
 from vpn_core.telegram_bot.keyboards.main import (
     admin_collaborator_discount_keyboard,
     admin_collaborator_service_keyboard,
@@ -116,7 +116,7 @@ async def admin_users_home(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         _users_list_text(data),
         reply_markup=admin_users_list_keyboard(
             data["users"],
@@ -148,7 +148,7 @@ async def admin_users_page(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         _users_list_text(data, search_query=search_query),
         reply_markup=admin_users_list_keyboard(
             data["users"],
@@ -171,7 +171,7 @@ async def admin_users_search_prompt(
     if not message or not await guard_admin_callback(callback, bot_config):
         return
     await state.set_state(AdminFlow.waiting_user_search)
-    await message.edit_text(
+    await edit_callback_message(message, 
         "🔍 <b>جستجوی کاربر</b>\n\n"
         "شناسه داخلی، Telegram ID یا نام کاربری را ارسال کن:\n"
         "مثال: <code>12345</code> | <code>987654321</code> | <code>@username</code>",
@@ -193,7 +193,7 @@ async def admin_users_clear_search(
     await state.update_data(user_search_query=None)
     admin_id = str(callback.from_user.id)
     data = await _load_users_page(api, admin_id, page=1)
-    await message.edit_text(
+    await edit_callback_message(message, 
         _users_list_text(data),
         reply_markup=admin_users_list_keyboard(
             data["users"],
@@ -215,7 +215,7 @@ async def admin_users_jump_prompt(
     if not message or not await guard_admin_callback(callback, bot_config):
         return
     await state.set_state(AdminFlow.waiting_user_page_jump)
-    await message.edit_text(
+    await edit_callback_message(message, 
         "📄 شماره صفحه مورد نظر را ارسال کن:",
         parse_mode="HTML",
     )
@@ -304,7 +304,7 @@ async def admin_user_detail(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         _user_detail_text(user),
         reply_markup=admin_user_detail_keyboard(user),
         parse_mode="HTML",
@@ -333,7 +333,7 @@ async def admin_user_configs(
         text = "📁 کانفیگی برای این کاربر ثبت نشده."
     else:
         text = f"📁 <b>کانفیگ‌های کاربر #{user_id}</b>\n\nیک کانفیگ را انتخاب کن:"
-    await message.edit_text(
+    await edit_callback_message(message, 
         text,
         reply_markup=admin_user_configs_keyboard(user_id, configs),
         parse_mode="HTML",
@@ -360,7 +360,7 @@ async def admin_user_config_detail(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         _config_detail_text(config),
         reply_markup=admin_user_config_detail_keyboard(user_id, config),
         parse_mode="HTML",
@@ -393,7 +393,7 @@ async def admin_user_config_action(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         _config_detail_text(config),
         reply_markup=admin_user_config_detail_keyboard(user_id, config),
         parse_mode="HTML",
@@ -423,7 +423,7 @@ async def admin_user_block_toggle(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         _user_detail_text(user),
         reply_markup=admin_user_detail_keyboard(user),
         parse_mode="HTML",
@@ -440,7 +440,7 @@ async def admin_user_collab_add_start(
     if not message or not await guard_admin_callback(callback, bot_config):
         return
     user_id = int(callback.data.split(":")[2])
-    await message.edit_text(
+    await edit_callback_message(message, 
         "🤝 <b>افزودن همکار</b>\n\nمرحله ۱: درصد تخفیف را انتخاب کن:",
         reply_markup=admin_collaborator_discount_keyboard(user_id),
         parse_mode="HTML",
@@ -462,7 +462,7 @@ async def admin_user_collab_select_service(
     percent = int(parts[5])
     admin_id = str(callback.from_user.id)
     services = await api.list_service_types_admin(admin_id)
-    await message.edit_text(
+    await edit_callback_message(message, 
         f"🤝 <b>افزودن همکار</b>\n\n"
         f"مرحله ۲: نوع سرویس برای تخفیف <b>{percent}%</b> را انتخاب کن:",
         reply_markup=admin_collaborator_service_keyboard(user_id, percent, services),
@@ -496,7 +496,7 @@ async def admin_user_collab_save(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         _user_detail_text(user),
         reply_markup=admin_user_detail_keyboard(user),
         parse_mode="HTML",
@@ -521,7 +521,7 @@ async def admin_user_collab_remove(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         _user_detail_text(user),
         reply_markup=admin_user_detail_keyboard(user),
         parse_mode="HTML",

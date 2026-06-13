@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
 from vpn_core.telegram_bot.handlers.common import (
+    edit_callback_message,
     guard_admin_callback,
     handle_admin_api_error,
     notify_user_chat,
@@ -22,7 +23,7 @@ async def menu_admin(callback: CallbackQuery, bot_config: TelegramBotConfig) -> 
     message = callback.message
     if not message or not await guard_admin_callback(callback, bot_config):
         return
-    await message.edit_text(
+    await edit_callback_message(message, 
         "⚙️ <b>پنل مدیریت</b>\n\n👇 یک گزینه را انتخاب کن:",
         reply_markup=admin_menu_keyboard(),
         parse_mode="HTML",
@@ -37,7 +38,7 @@ async def admin_payments(callback: CallbackQuery, api: UserManagerApiClient, bot
         return
     payments = await api.list_pending_payments(str(callback.from_user.id))
     if not payments:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "✅ پرداخت در انتظاری وجود ندارد.",
             reply_markup=admin_menu_keyboard(),
         )
@@ -48,7 +49,7 @@ async def admin_payments(callback: CallbackQuery, api: UserManagerApiClient, bot
             lines.append(
                 f"🧾 #{p['id']} | کاربر {p['user_id']} | {format_toman(p['amount_toman'])} | {purpose}"
             )
-        await message.edit_text(
+        await edit_callback_message(message, 
             "⏳ <b>پرداخت‌های در انتظار</b>\n\n" + "\n".join(lines),
             reply_markup=admin_menu_keyboard(),
             parse_mode="HTML",
@@ -62,7 +63,7 @@ async def admin_services(callback: CallbackQuery, api: UserManagerApiClient, bot
     if not message or not await guard_admin_callback(callback, bot_config):
         return
     services = await api.list_service_types_admin(str(callback.from_user.id))
-    await message.edit_text(
+    await edit_callback_message(message, 
         "🔧 <b>مدیریت انواع سرویس</b>\n\nروشن/خاموش کن:",
         reply_markup=admin_services_keyboard(services),
         parse_mode="HTML",
@@ -78,7 +79,7 @@ async def admin_toggle_service(callback: CallbackQuery, api: UserManagerApiClien
     _, _, action, slug = callback.data.split(":", 3)
     await api.toggle_service_type(str(callback.from_user.id), slug, action == "enable")
     services = await api.list_service_types_admin(str(callback.from_user.id))
-    await message.edit_text(
+    await edit_callback_message(message, 
         "🔧 <b>مدیریت انواع سرویس</b>\n\nروشن/خاموش کن:",
         reply_markup=admin_services_keyboard(services),
         parse_mode="HTML",
@@ -98,7 +99,7 @@ async def admin_plans(callback: CallbackQuery, api: UserManagerApiClient, bot_co
             return
         raise
     if not plans:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "📋 پلنی تعریف نشده.\n➕ می‌توانی پلن جدید اضافه کنی:",
             reply_markup=admin_plans_keyboard(),
         )
@@ -110,7 +111,7 @@ async def admin_plans(callback: CallbackQuery, api: UserManagerApiClient, bot_co
                 f"#{plan['id']} [{plan['service_type']}] {plan['name']} — "
                 f"{gb:.0f}GB / {plan['duration_days']}روز — {format_toman(plan['price_toman'])}"
             )
-        await message.edit_text(
+        await edit_callback_message(message, 
             "📋 <b>لیست پلن‌ها</b>\n\n" + "\n".join(lines),
             reply_markup=admin_plans_keyboard(),
             parse_mode="HTML",
@@ -139,10 +140,7 @@ async def admin_approve(callback: CallbackQuery, api: UserManagerApiClient, bot_
         f"💰 موجودی جدید کاربر: {format_toman(result['wallet_balance_toman'])}"
     )
 
-    if message.caption is not None:
-        await message.edit_caption(text, parse_mode="HTML")
-    else:
-        await message.edit_text(text, parse_mode="HTML")
+    await edit_callback_message(message, text, parse_mode="HTML")
 
     notified = await notify_user_chat(
         message.bot,
@@ -163,8 +161,5 @@ async def admin_reject(callback: CallbackQuery, api: UserManagerApiClient, bot_c
         return
     payment_id = int(callback.data.rsplit(":", 1)[1])
     await api.reject_payment(str(callback.from_user.id), payment_id)
-    if message.caption is not None:
-        await message.edit_caption(f"❌ پرداخت #{payment_id} رد شد.")
-    else:
-        await message.edit_text(f"❌ پرداخت #{payment_id} رد شد.")
+    await edit_callback_message(message, f"❌ پرداخت #{payment_id} رد شد.")
     await callback.answer("❌ رد شد")

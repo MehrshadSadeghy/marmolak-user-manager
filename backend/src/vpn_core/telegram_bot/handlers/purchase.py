@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery
 
 from vpn_core.billing_domain.domain.payment_request import PaymentPurpose
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
-from vpn_core.telegram_bot.handlers.common import resolve_purchase_delivery, send_delivery
+from vpn_core.telegram_bot.handlers.common import resolve_purchase_delivery, send_delivery, edit_callback_message
 from vpn_core.telegram_bot.keyboards.main import (
     back_to_menu_keyboard,
     openvpn_servers_purchase_keyboard,
@@ -24,13 +24,13 @@ async def menu_buy(callback: CallbackQuery, api: UserManagerApiClient) -> None:
         return
     services = await api.list_services()
     if not services:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "😔 فعلاً سرویسی فعال نیست.\n"
             "📞 لطفاً با پشتیبانی تماس بگیرید.",
             reply_markup=back_to_menu_keyboard(),
         )
     else:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "🛒 <b>خرید سرویس جدید</b>\n\n"
             "🔥 بهترین پلن‌ها با قیمت استثنایی!\n"
             "👇 نوع VPN مورد نظرت را انتخاب کن:",
@@ -52,19 +52,19 @@ async def select_service(callback: CallbackQuery, api: UserManagerApiClient) -> 
     if service_type == "openvpn":
         servers = await api.list_openvpn_servers()
         if not servers:
-            await message.edit_text(
+            await edit_callback_message(message, 
                 "😔 سرور OpenVPN فعالی موجود نیست.\n"
                 "📞 با پشتیبانی تماس بگیر.",
                 reply_markup=back_to_menu_keyboard(),
             )
         elif all(server.get("is_full") for server in servers):
-            await message.edit_text(
+            await edit_callback_message(message, 
                 "😔 همه سرورهای OpenVPN در حال حاضر پر هستند.\n"
                 "⏳ لطفاً بعداً دوباره تلاش کن یا با پشتیبانی تماس بگیر.",
                 reply_markup=back_to_menu_keyboard(),
             )
         else:
-            await message.edit_text(
+            await edit_callback_message(message, 
                 "🖥 <b>انتخاب سرور OpenVPN</b>\n\n"
                 "🟢 سرورهای آزاد قابل خرید هستند.\n"
                 "🔴 سرورهای پر موقتاً غیرفعال‌اند.\n\n"
@@ -77,13 +77,13 @@ async def select_service(callback: CallbackQuery, api: UserManagerApiClient) -> 
 
     plans = await api.list_plans(service_type, telegram_id=tg_id)
     if not plans:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "😔 برای این سرویس پلنی تعریف نشده.\n"
             "📞 با پشتیبانی تماس بگیر.",
             reply_markup=back_to_menu_keyboard(),
         )
     else:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "💎 <b>پلن مناسب خودت را انتخاب کن</b>\n\n"
             "⚡ فعال‌سازی آنی بعد از پرداخت\n"
             "🎁 هرچه زودتر بخری، زودتر وصل می‌شی!",
@@ -108,13 +108,13 @@ async def select_openvpn_server(callback: CallbackQuery, api: UserManagerApiClie
     tg_id = str(callback.from_user.id)
     plans = await api.list_plans("openvpn", telegram_id=tg_id)
     if not plans:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "😔 برای OpenVPN پلنی تعریف نشده.\n"
             "📞 با پشتیبانی تماس بگیر.",
             reply_markup=back_to_menu_keyboard(),
         )
     else:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "💎 <b>پلن مناسب خودت را انتخاب کن</b>\n\n"
             "⚡ فعال‌سازی آنی بعد از پرداخت\n"
             "🎁 هرچه زودتر بخری، زودتر وصل می‌شی!",
@@ -143,7 +143,7 @@ async def _complete_purchase(
     preview = await api.preview_purchase(tg_id, plan_id, server_id=server_id)
     if preview["sufficient_balance"]:
         result = await api.purchase(tg_id, plan_id, server_id=server_id)
-        await message.edit_text(
+        await edit_callback_message(message, 
             "🎉 <b>تبریک! خرید با موفقیت انجام شد</b>\n\n"
             f"💰 موجودی جدید: <b>{format_toman(result['wallet_balance_toman'])}</b>\n\n"
             "📩 کانفیگ سرویس در پیام بعدی ارسال می‌شود.",
@@ -162,14 +162,14 @@ async def _complete_purchase(
     else:
         methods = await api.list_payment_methods()
         if not methods:
-            await message.edit_text(
+            await edit_callback_message(message, 
                 "😔 موجودی کافی نیست و روش پرداختی تنظیم نشده.\n"
                 "💳 اول کیف پولت را شارژ کن یا با پشتیبانی تماس بگیر.",
                 reply_markup=back_to_menu_keyboard(),
             )
         else:
             prefix = f"buy:sv:{server_id}" if server_id is not None else f"buy:{plan_id}"
-            await message.edit_text(
+            await edit_callback_message(message, 
                 "💳 <b>موجودی کافی نیست</b>\n\n"
                 f"💰 مبلغ پلن: <b>{format_toman(preview['price_toman'])}</b>\n"
                 f"👛 موجودی فعلی: <b>{format_toman(preview['wallet_balance_toman'])}</b>\n"
@@ -216,7 +216,7 @@ async def buy_with_payment_openvpn(callback: CallbackQuery, api: UserManagerApiC
     method = next(m for m in methods if m["id"] == int(method_id))
     support = await api.get_support()
     instructions = support.get("payment_instructions") or ""
-    await message.edit_text(
+    await edit_callback_message(message, 
         "💸 <b>درخواست شارژ کیف پول ثبت شد</b>\n\n"
         f"💰 مبلغ: <b>{format_toman(payment['payment_request']['amount_toman'])}</b>\n\n"
         f"{format_payment_method_display(method)}\n\n"
@@ -250,7 +250,7 @@ async def buy_with_payment(callback: CallbackQuery, api: UserManagerApiClient) -
     method = next(m for m in methods if m["id"] == int(method_id))
     support = await api.get_support()
     instructions = support.get("payment_instructions") or ""
-    await message.edit_text(
+    await edit_callback_message(message, 
         "💸 <b>درخواست شارژ کیف پول ثبت شد</b>\n\n"
         f"💰 مبلغ: <b>{format_toman(payment['payment_request']['amount_toman'])}</b>\n\n"
         f"{format_payment_method_display(method)}\n\n"

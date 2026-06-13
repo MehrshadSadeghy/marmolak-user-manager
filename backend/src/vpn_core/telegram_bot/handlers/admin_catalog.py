@@ -4,7 +4,7 @@ from aiogram.types import CallbackQuery, Message
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
-from vpn_core.telegram_bot.handlers.common import guard_admin_callback, handle_admin_api_error, is_admin
+from vpn_core.telegram_bot.handlers.common import guard_admin_callback, handle_admin_api_error, is_admin, edit_callback_message
 from vpn_core.telegram_bot.keyboards.main import (
     admin_menu_keyboard,
     admin_payment_method_detail_keyboard,
@@ -43,12 +43,12 @@ async def admin_plan_add_start(
             return
         raise
     if not services:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "😔 نوع سرویسی تعریف نشده.\nاول از «انواع سرویس» یک سرویس فعال کن.",
             reply_markup=admin_plans_keyboard(),
         )
     else:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "📋 <b>افزودن پلن جدید</b>\n\n👇 نوع سرویس را انتخاب کن:",
             reply_markup=admin_plan_service_types_keyboard(services),
             parse_mode="HTML",
@@ -68,7 +68,7 @@ async def admin_plan_add_type(
     service_type = callback.data.rsplit(":", 1)[1]
     await state.set_state(AdminFlow.create_plan_name)
     await state.update_data(service_type=service_type)
-    await message.edit_text(
+    await edit_callback_message(message, 
         "✏️ <b>نام پلن</b> را بنویس:\n<i>مثال: پلن یک ماهه ۵۰ گیگ</i>",
         parse_mode="HTML",
     )
@@ -177,7 +177,7 @@ async def admin_payment_methods_list(
             return
         raise
     if not methods:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "💳 روش پرداختی تعریف نشده.\n➕ یک روش جدید اضافه کن:",
             reply_markup=admin_payment_methods_keyboard([]),
         )
@@ -186,7 +186,7 @@ async def admin_payment_methods_list(
         for method in methods:
             state = "🟢" if method.get("is_active", True) else "🔴"
             lines.append(f"{state} <b>{method['name']}</b> (#{method['id']})")
-        await message.edit_text(
+        await edit_callback_message(message, 
             "💳 <b>روش‌های پرداخت</b>\n\n" + "\n".join(lines) + "\n\n👇 برای مدیریت انتخاب کن:",
             reply_markup=admin_payment_methods_keyboard(methods),
             parse_mode="HTML",
@@ -204,7 +204,7 @@ async def admin_pm_add_start(
     if not message or not await guard_admin_callback(callback, bot_config):
         return
     await state.set_state(AdminFlow.create_pm_name)
-    await message.edit_text(
+    await edit_callback_message(message, 
         "✏️ <b>نام روش پرداخت</b> را بنویس:\n<i>مثال: کارت به کارت</i>",
         parse_mode="HTML",
     )
@@ -292,7 +292,7 @@ async def admin_pm_detail(
         await callback.answer("❌ روش پرداخت یافت نشد", show_alert=True)
         return
     state = "فعال" if method.get("is_active", True) else "غیرفعال"
-    await message.edit_text(
+    await edit_callback_message(message, 
         f"💳 <b>{method['name']}</b> (#{method_id}) — {state}\n\n"
         f"{format_payment_method_display(method)}",
         reply_markup=admin_payment_method_detail_keyboard(
@@ -327,7 +327,7 @@ async def admin_pm_toggle(
             return
         raise
     state = "فعال" if method.get("is_active", True) else "غیرفعال"
-    await message.edit_text(
+    await edit_callback_message(message, 
         f"💳 <b>{method['name']}</b> (#{method_id}) — {state}\n\n"
         f"{format_payment_method_display(method)}",
         reply_markup=admin_payment_method_detail_keyboard(
@@ -357,13 +357,13 @@ async def admin_pm_delete(
             return
         raise
     if not methods:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "🗑 روش پرداخت حذف شد.\n💳 روش دیگری تعریف نشده.",
             reply_markup=admin_payment_methods_keyboard([]),
         )
     else:
         lines = [f"{'🟢' if m.get('is_active', True) else '🔴'} <b>{m['name']}</b> (#{m['id']})" for m in methods]
-        await message.edit_text(
+        await edit_callback_message(message, 
             "🗑 <b>حذف شد.</b>\n\n💳 <b>روش‌های پرداخت</b>\n\n" + "\n".join(lines),
             reply_markup=admin_payment_methods_keyboard(methods),
             parse_mode="HTML",
@@ -376,7 +376,7 @@ async def admin_report_menu(callback: CallbackQuery, bot_config: TelegramBotConf
     message = callback.message
     if not message or not await guard_admin_callback(callback, bot_config):
         return
-    await message.edit_text(
+    await edit_callback_message(message, 
         "📊 <b>گزارش مالی</b>\n\n👇 بازه زمانی را انتخاب کن:",
         reply_markup=admin_report_keyboard(),
         parse_mode="HTML",
@@ -400,7 +400,7 @@ async def admin_report_show(
         if await handle_admin_api_error(callback, exc):
             return
         raise
-    await message.edit_text(
+    await edit_callback_message(message, 
         format_financial_report(report),
         reply_markup=admin_report_keyboard(),
         parse_mode="HTML",

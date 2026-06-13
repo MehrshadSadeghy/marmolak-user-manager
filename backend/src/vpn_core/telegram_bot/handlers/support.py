@@ -1,5 +1,6 @@
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
+from vpn_core.telegram_bot.handlers.common import edit_callback_message
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.keyboards.main import buy_now_keyboard
@@ -29,7 +30,7 @@ async def menu_support(callback: CallbackQuery, api: UserManagerApiClient) -> No
             "😔 نام کاربری پشتیبانی هنوز تنظیم نشده.\n"
             "📞 لطفاً با مدیر سیستم تماس بگیرید."
         )
-    await message.edit_text(
+    await edit_callback_message(message, 
         text,
         reply_markup=buy_now_keyboard(),
         parse_mode="HTML",

@@ -1,6 +1,7 @@
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from vpn_core.telegram_bot.handlers.common import edit_callback_message
 
 from vpn_core.billing_domain.domain.payment_request import PaymentPurpose
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
@@ -18,7 +19,7 @@ async def menu_topup(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
     await state.set_state(UserFlow.waiting_topup_amount)
-    await message.edit_text(
+    await edit_callback_message(message, 
         "💳 <b>شارژ کیف پول</b>\n\n"
         "💰 با شارژ کیف پول، خرید بعدی <b>فوری و بدون دردسر</b> انجام می‌شود!\n\n"
         "✏️ مبلغ مورد نظر را به <b>تومان</b> بنویس:\n"
@@ -71,7 +72,7 @@ async def topup_payment(callback: CallbackQuery, api: UserManagerApiClient) -> N
     method = next(m for m in methods if m["id"] == int(method_id))
     support = await api.get_support()
     instructions = support.get("payment_instructions") or ""
-    await message.edit_text(
+    await edit_callback_message(message, 
         "💸 <b>درخواست شارژ کیف پول ثبت شد</b>\n\n"
         f"💰 مبلغ: <b>{format_toman(payment['payment_request']['amount_toman'])}</b>\n\n"
         f"{format_payment_method_display(method)}\n\n"

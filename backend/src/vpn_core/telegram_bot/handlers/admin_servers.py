@@ -4,7 +4,7 @@ from aiogram.types import CallbackQuery, Message
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
-from vpn_core.telegram_bot.handlers.common import guard_admin_callback, handle_admin_api_error
+from vpn_core.telegram_bot.handlers.common import guard_admin_callback, handle_admin_api_error, edit_callback_message
 from vpn_core.telegram_bot.keyboards.main import (
     admin_menu_keyboard,
     admin_openvpn_confirm_keyboard,
@@ -47,7 +47,7 @@ async def admin_servers_capacity(
             return
         raise
     if not servers:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "⚠️ سرور OpenVPN فعالی یافت نشد.\n"
             "ابتدا سرور را در user-manager با openvpn.enabled=true ثبت کن.",
             reply_markup=admin_menu_keyboard(),
@@ -55,7 +55,7 @@ async def admin_servers_capacity(
         )
     else:
         lines = _format_server_capacity_lines(servers)
-        await message.edit_text(
+        await edit_callback_message(message, 
             "🖥 <b>سرورها و ظرفیت</b>\n\n"
             "تعداد کانفیگ‌های فعال هر سرور به‌صورت زنده از دیتابیس خوانده می‌شود.\n\n"
             + "\n\n".join(lines),
@@ -83,7 +83,7 @@ async def admin_openvpn_endpoint_menu(
             return
         raise
     if not servers:
-        await message.edit_text(
+        await edit_callback_message(message, 
             "⚠️ سرور OpenVPN فعالی یافت نشد.\n"
             "ابتدا سرور را در user-manager با openvpn.enabled=true ثبت کن.",
             reply_markup=admin_menu_keyboard(),
@@ -91,7 +91,7 @@ async def admin_openvpn_endpoint_menu(
         )
         await callback.answer()
         return
-    await message.edit_text(
+    await edit_callback_message(message, 
         "🔌 <b>تغییر پورت/پروتکل OpenVPN</b>\n\n"
         "سرور مورد نظر را انتخاب کن:",
         reply_markup=admin_openvpn_servers_keyboard(servers),
@@ -111,7 +111,7 @@ async def admin_openvpn_select_server(
         return
     server_id = int(callback.data.rsplit(":", 1)[1])
     await state.update_data(server_id=server_id)
-    await message.edit_text(
+    await edit_callback_message(message, 
         "🔌 پروتکل جدید را انتخاب کن:",
         reply_markup=admin_openvpn_proto_keyboard(server_id),
         parse_mode="HTML",
@@ -131,7 +131,7 @@ async def admin_openvpn_select_proto(
     _, _, _, server_id, proto = callback.data.split(":", 4)
     await state.update_data(server_id=int(server_id), proto=proto)
     await state.set_state(AdminFlow.openvpn_endpoint_port)
-    await message.edit_text(
+    await edit_callback_message(message, 
         f"🔢 پورت جدید را برای <b>{proto.upper()}</b> وارد کن (مثلاً 443 یا 10023):",
         parse_mode="HTML",
     )
@@ -220,7 +220,7 @@ async def admin_openvpn_confirm(
         await callback.answer("⚠️ اطلاعات ناقص است", show_alert=True)
         return
 
-    await message.edit_text("⏳ در حال اعمال تغییرات...")
+    await edit_callback_message(message, "⏳ در حال اعمال تغییرات...")
     await callback.answer()
     try:
         result = await api.apply_openvpn_endpoint_admin(
@@ -233,7 +233,7 @@ async def admin_openvpn_confirm(
         await state.clear()
         if await handle_admin_api_error(callback, exc):
             return
-        await message.edit_text(
+        await edit_callback_message(message, 
             f"❌ خطا در اعمال تغییرات:\n<code>{exc}</code>",
             reply_markup=admin_menu_keyboard(),
             parse_mode="HTML",
@@ -242,7 +242,7 @@ async def admin_openvpn_confirm(
 
     await state.clear()
     status_icon = "✅" if result.get("openvpn_running") else "⚠️"
-    await message.edit_text(
+    await edit_callback_message(message, 
         f"{status_icon} <b>تغییر OpenVPN اعمال شد</b>\n\n"
         f"🖥 سرور: <b>{server_name}</b>\n"
         f"📍 قبلی: <code>{result['previous_proto'].upper()}/{result['previous_port']}</code>\n"
@@ -268,7 +268,7 @@ async def admin_openvpn_cancel(
     if not message or not await guard_admin_callback(callback, bot_config):
         return
     await state.clear()
-    await message.edit_text(
+    await edit_callback_message(message, 
         "❌ تغییر OpenVPN لغو شد.",
         reply_markup=admin_menu_keyboard(),
     )

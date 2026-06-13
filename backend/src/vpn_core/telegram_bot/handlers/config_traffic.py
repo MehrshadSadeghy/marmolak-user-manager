@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
-from vpn_core.telegram_bot.handlers.common import handle_admin_api_error
+from vpn_core.telegram_bot.handlers.common import handle_admin_api_error, edit_callback_message
 from vpn_core.telegram_bot.keyboards.main import back_to_menu_keyboard, main_menu_keyboard
 from vpn_core.telegram_bot.messages import status_label_fa
 from vpn_core.telegram_bot.states import UserFlow
@@ -25,7 +25,7 @@ async def menu_config_traffic(
         await callback.answer()
         return
     await state.set_state(UserFlow.waiting_config_id)
-    await message.edit_text(
+    await edit_callback_message(message, 
         "📊 <b>استعلام حجم کانفیگ</b>\n\n"
         "🔢 کد ۱۰ رقمی کانفیگ را بفرست.\n"
         "💡 این کد همان نام فایل <code>XXXXXXXXXX.ovpn</code> است.\n\n"

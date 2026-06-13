@@ -1,7 +1,8 @@
 import logging
 
 import httpx
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message
 
 from vpn_core.telegram_bot.config import TelegramBotConfig
 
@@ -25,6 +26,48 @@ def username(message: Message) -> str | None:
 
 async def ensure_user(api: UserManagerApiClient, message: Message) -> dict:
     return await api.register_user(telegram_id(message), chat_id(message), username(message))
+
+
+def _is_media_message(message: Message) -> bool:
+    return bool(message.photo or message.document or message.video or message.animation)
+
+
+async def edit_callback_message(
+    message: Message,
+    text: str,
+    *,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: str = "HTML",
+) -> None:
+    """Edit inline-keyboard menu text for both plain and media (photo) messages."""
+    try:
+        if _is_media_message(message):
+            await message.edit_caption(
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+        else:
+            await message.edit_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+    except TelegramBadRequest as exc:
+        error = str(exc).lower()
+        if "message is not modified" in error:
+            return
+        if "there is no text in the message to edit" in error:
+            await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+            return
+        raise
+
+
+async def answer_callback(callback: CallbackQuery, text: str | None = None, *, show_alert: bool = False) -> None:
+    try:
+        await callback.answer(text, show_alert=show_alert)
+    except TelegramBadRequest:
+        pass
 
 
 async def notify_user_chat(
@@ -143,8 +186,19 @@ def is_admin(user_id: int | str, bot_config: TelegramBotConfig) -> bool:
 async def guard_admin_callback(callback: CallbackQuery, bot_config: TelegramBotConfig) -> bool:
     if is_admin(callback.from_user.id, bot_config):
         return True
-    await callback.answer("⛔ دسترسی ادمین لازم است", show_alert=True)
+    await answer_callback(callback, "⛔ دسترسی ادمین لازم است", show_alert=True)
     return False
+
+
+async def require_callback_message(callback: CallbackQuery) -> Message | None:
+    if callback.message:
+        return callback.message
+    await answer_callback(
+        callback,
+        "پیام اصلی در دسترس نیست. از /start دوباره شروع کن.",
+        show_alert=True,
+    )
+    return None
 
 
 async def handle_admin_api_error(event: CallbackQuery | Message, exc: Exception) -> bool:
