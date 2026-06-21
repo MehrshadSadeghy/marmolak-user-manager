@@ -185,20 +185,6 @@ async def _complete_purchase(
         await callback.answer("💳 نیاز به پرداخت")
 
 
-@router.callback_query(F.data.startswith("buy:sv:") & F.data.contains(":plan:"))
-async def select_plan_with_server(callback: CallbackQuery, api: UserManagerApiClient) -> None:
-    parts = callback.data.split(":")
-    server_id = int(parts[2])
-    plan_id = int(parts[4])
-    await _complete_purchase(callback, api, plan_id=plan_id, server_id=server_id)
-
-
-@router.callback_query(F.data.startswith("buy:plan:"))
-async def select_plan(callback: CallbackQuery, api: UserManagerApiClient) -> None:
-    plan_id = int(callback.data.rsplit(":", 1)[1])
-    await _complete_purchase(callback, api, plan_id=plan_id)
-
-
 @router.callback_query(F.data.regexp(r"^buy:sv:\d+:plan:\d+:pay:\d+$"))
 async def buy_with_payment_openvpn(callback: CallbackQuery, api: UserManagerApiClient) -> None:
     message = callback.message
@@ -265,3 +251,17 @@ async def buy_with_payment(callback: CallbackQuery, api: UserManagerApiClient) -
         parse_mode="HTML",
     )
     await callback.answer("📸 منتظر رسید")
+
+
+@router.callback_query(F.data.regexp(r"^buy:sv:\d+:plan:\d+$"))
+async def select_plan_with_server(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    parts = callback.data.split(":")
+    server_id = int(parts[2])
+    plan_id = int(parts[4])
+    await _complete_purchase(callback, api, plan_id=plan_id, server_id=server_id)
+
+
+@router.callback_query(F.data.startswith("buy:plan:"))
+async def select_plan(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    plan_id = int(callback.data.rsplit(":", 1)[1])
+    await _complete_purchase(callback, api, plan_id=plan_id)
