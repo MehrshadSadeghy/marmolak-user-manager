@@ -5,6 +5,7 @@ class UserFlow(StatesGroup):
     waiting_topup_amount = State()
     waiting_receipt = State()
     waiting_config_id = State()
+    waiting_pasarguard_link = State()
 
 class AdminFlow(StatesGroup):
     create_plan_name = State()

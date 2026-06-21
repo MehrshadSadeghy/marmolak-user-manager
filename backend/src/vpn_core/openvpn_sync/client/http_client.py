@@ -80,25 +80,66 @@ class HttpOpenVpnClient(OpenVpnClient):
             LOGGER.warning("OpenVPN node health check failed for server %s: %s", server.id, exc)
             return False
 
-    async def create_user(self, server: Server, user: OpenVpnUser) -> str:
+    async def create_user(
+        self,
+        server: Server,
+        user: OpenVpnUser,
+        *,
+        auth_mode: str | None = None,
+    ) -> str:
         host, port, proto = self._vpn_remote(server)
+        payload: dict = {
+            "common_name": user.common_name,
+            "server_config": {
+                "server_host": host,
+                "server_port": port,
+                "proto": proto,
+            },
+        }
+        if auth_mode:
+            payload["auth_mode"] = auth_mode
         data = await self._request(
             server,
             "POST",
             "/node/vpn/openvpn/create",
-            {
-                "common_name": user.common_name,
-                "server_config": {
-                    "server_host": host,
-                    "server_port": port,
-                    "proto": proto,
-                },
-            },
+            payload,
         )
         ovpn = data.get("ovpn_config")
         if not ovpn:
             raise RuntimeError("Node did not return ovpn_config")
         return ovpn
+
+    async def create_auth_user(self, server: Server, username: str, password_hash: str) -> dict:
+        return await self._request(
+            server,
+            "POST",
+            "/node/vpn/openvpn/auth/create",
+            {"username": username, "password_hash": password_hash},
+        )
+
+    async def rotate_auth_user(self, server: Server, username: str, password_hash: str) -> dict:
+        return await self._request(
+            server,
+            "POST",
+            "/node/vpn/openvpn/auth/rotate",
+            {"username": username, "password_hash": password_hash},
+        )
+
+    async def delete_auth_user(self, server: Server, username: str) -> None:
+        await self._request(
+            server,
+            "POST",
+            "/node/vpn/openvpn/auth/delete",
+            {"username": username},
+        )
+
+    async def apply_auth_mode(self, server: Server, auth_mode: str) -> dict:
+        return await self._request(
+            server,
+            "POST",
+            "/node/vpn/openvpn/apply-auth-mode",
+            {"auth_mode": auth_mode},
+        )
 
     async def delete_user(self, server: Server, common_name: str) -> None:
         await self._request(

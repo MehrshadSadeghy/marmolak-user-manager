@@ -68,6 +68,21 @@ class PostgresManager(Manager):
                             "ADD COLUMN last_status_bytes BIGINT NOT NULL DEFAULT 0"
                         )
                     )
+                credential_patches = {
+                    "auth_mode": "VARCHAR(32) NOT NULL DEFAULT 'certificate'",
+                    "vpn_username": "VARCHAR(32)",
+                    "password_hash": "VARCHAR(255)",
+                    "password_rotated_at": "TIMESTAMP WITH TIME ZONE",
+                    "auth_synced_at": "TIMESTAMP WITH TIME ZONE",
+                }
+                for column_name, column_type in credential_patches.items():
+                    if column_name not in credential_columns:
+                        conn.execute(
+                            text(
+                                f"ALTER TABLE openvpn_client_credentials "
+                                f"ADD COLUMN {column_name} {column_type}"
+                            )
+                        )
 
     async def run(self) -> None:
         pass

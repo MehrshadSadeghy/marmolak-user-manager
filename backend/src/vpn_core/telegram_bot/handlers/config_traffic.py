@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery, Message
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
 from vpn_core.telegram_bot.handlers.common import handle_admin_api_error, edit_callback_message
+from vpn_core.telegram_bot.handlers.menu_helpers import pasarguard_menu_enabled
 from vpn_core.telegram_bot.keyboards.main import back_to_menu_keyboard, main_menu_keyboard
 from vpn_core.telegram_bot.messages import status_label_fa
 from vpn_core.telegram_bot.states import UserFlow
@@ -70,6 +71,7 @@ async def receive_config_id(
     await state.clear()
     status = status_label_fa(result["status_label"])
     is_admin = tg_id in bot_config.admin_chat_ids
+    pasarguard_enabled = await pasarguard_menu_enabled(api)
     await message.answer(
         "📊 <b>وضعیت کانفیگ</b>\n\n"
         f"🆔 کد کانفیگ: <code>{result['config_id']}</code>\n"
@@ -80,6 +82,6 @@ async def receive_config_id(
         f"📦 سقف حجم: <b>{result['limit_data_label']}</b>\n"
         f"📉 حجم باقی‌مانده: <b>{result['remaining_data_label']}</b>\n"
         f"📅 انقضا: {result['expire_at'][:10]}",
-        reply_markup=main_menu_keyboard(is_admin),
+        reply_markup=main_menu_keyboard(is_admin, pasarguard_enabled=pasarguard_enabled),
         parse_mode="HTML",
     )

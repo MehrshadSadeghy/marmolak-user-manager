@@ -8,7 +8,7 @@ from vpn_core.telegram_bot.handlers.common import (
     edit_callback_message,
     resolve_purchase_delivery,
     send_delivery,
-    send_delivery_to_chat,
+    send_openvpn_delivery_to_chat,
 )
 from vpn_core.telegram_bot.keyboards.main import (
     back_to_menu_keyboard,
@@ -76,8 +76,108 @@ async def download_subscription_config(callback: CallbackQuery, api: UserManager
             )
             return
         raise
-    await send_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
+    await send_openvpn_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
     await callback.answer("📥 فایل ارسال شد")
+
+
+@router.callback_query(F.data.startswith("credentials:view:"))
+async def view_openvpn_credentials(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    config_id = callback.data.rsplit(":", 1)[1]
+    tg_id = str(callback.from_user.id)
+    try:
+        delivery = await api.get_openvpn_credential_view(tg_id, config_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            await callback.answer("❌ اطلاعات کانفیگ یافت نشد.", show_alert=True)
+            return
+        raise
+    await send_openvpn_delivery_to_chat(
+        message.bot,
+        tg_id,
+        delivery,
+        reply_markup=buy_now_keyboard(),
+        view_only=True,
+    )
+    await callback.answer("ℹ️ اطلاعات ارسال شد")
+
+
+@router.callback_query(F.data.startswith("credentials:rotate:"))
+async def rotate_openvpn_credentials(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    config_id = callback.data.rsplit(":", 1)[1]
+    tg_id = str(callback.from_user.id)
+    try:
+        delivery = await api.rotate_openvpn_credentials(tg_id, config_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 400:
+            await callback.answer(
+                "این کانفیگ فقط با گواهی (certificate) کار می‌کند و رمز ندارد.",
+                show_alert=True,
+            )
+            return
+        if exc.response.status_code == 404:
+            await callback.answer("❌ کانفیگ یافت نشد.", show_alert=True)
+            return
+        raise
+    await send_openvpn_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
+    await callback.answer("🔑 رمز جدید ارسال شد")
+
+
+@router.callback_query(F.data.startswith("credentials:migrate:"))
+async def migrate_openvpn_credentials(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    config_id = callback.data.rsplit(":", 1)[1]
+    tg_id = str(callback.from_user.id)
+    try:
+        delivery = await api.migrate_openvpn_credentials(tg_id, config_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 400:
+            await callback.answer(
+                "این گزینه برای کانفیگ شما فعال نیست. سرور باید در حالت dual باشد.",
+                show_alert=True,
+            )
+            return
+        if exc.response.status_code == 404:
+            await callback.answer("❌ کانفیگ یافت نشد.", show_alert=True)
+            return
+        raise
+    await send_openvpn_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
+    await callback.answer("🔐 نام کاربری و رمز ارسال شد")
+
+
+@router.callback_query(F.data.startswith("credentials:finalize:"))
+async def finalize_openvpn_auth_migration(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    config_id = callback.data.rsplit(":", 1)[1]
+    tg_id = str(callback.from_user.id)
+    try:
+        delivery = await api.finalize_openvpn_auth_migration(tg_id, config_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 400:
+            await callback.answer(
+                "هنوز زمان حذف گواهی قدیمی نرسیده. چند روز دیگر دوباره امتحان کن.",
+                show_alert=True,
+            )
+            return
+        if exc.response.status_code == 404:
+            await callback.answer("❌ کانفیگ یافت نشد.", show_alert=True)
+            return
+        raise
+    await send_openvpn_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
+    await callback.answer("✅ کانفیگ جدید ارسال شد")
 
 
 @router.callback_query(F.data.startswith("download:config:"))
@@ -98,7 +198,7 @@ async def download_config_by_id(callback: CallbackQuery, api: UserManagerApiClie
             )
             return
         raise
-    await send_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
+    await send_openvpn_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
     await callback.answer("📥 فایل ارسال شد")
 
 

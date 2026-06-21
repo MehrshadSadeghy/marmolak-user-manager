@@ -8,6 +8,9 @@ from vpn_core.telegram_bot.config import TelegramBotConfig
 
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.keyboards.main import buy_now_keyboard
+from vpn_core.openvpn_sync.services.openvpn_credential_delivery_service import (
+    OpenVpnCredentialDeliveryService,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -57,7 +60,7 @@ async def edit_callback_message(
         error = str(exc).lower()
         if "message is not modified" in error:
             return
-        if "there is no text in the message to edit" in error:
+        if "there is no text in the message to edit" in error or "message can't be edited" in error:
             await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
             return
         raise
@@ -68,6 +71,12 @@ async def answer_callback(callback: CallbackQuery, text: str | None = None, *, s
         await callback.answer(text, show_alert=show_alert)
     except TelegramBadRequest:
         pass
+
+
+async def mark_callback_answered(data: dict) -> None:
+    mark = data.get("mark_callback_answered")
+    if callable(mark):
+        await mark()
 
 
 async def notify_user_chat(
@@ -87,12 +96,83 @@ async def notify_user_chat(
 
 
 async def send_delivery(message: Message, delivery: dict) -> None:
-    await send_delivery_to_chat(
+    await send_openvpn_delivery_to_chat(
         message.bot,
         message.chat.id,
         delivery,
         reply_markup=buy_now_keyboard(),
     )
+
+
+async def send_openvpn_delivery_to_chat(
+    bot,
+    chat_id: str | int,
+    delivery: dict,
+    *,
+    reply_markup=None,
+    view_only: bool = False,
+) -> bool:
+    if not delivery:
+        return False
+    try:
+        if delivery.get("service_type") == "openvpn" and (
+            OpenVpnCredentialDeliveryService.uses_username_password_auth(delivery)
+            or delivery.get("delivery_type") == "openvpn_credentials"
+        ):
+            await bot.send_message(
+                int(chat_id),
+                OpenVpnCredentialDeliveryService.format_telegram_message(
+                    delivery,
+                    view_only=view_only or not delivery.get("includes_password"),
+                ),
+                reply_markup=reply_markup if not delivery.get("content") else None,
+                parse_mode="HTML",
+            )
+
+        if delivery.get("delivery_type") in {"file", "openvpn_package"} and delivery.get("content"):
+            document = BufferedInputFile(
+                delivery["content"].encode("utf-8"),
+                filename=delivery.get("filename") or "config.ovpn",
+            )
+            config_id = delivery.get("config_id") or (
+                str(delivery.get("filename", "")).removesuffix(".ovpn") or "—"
+            )
+            if OpenVpnCredentialDeliveryService.uses_username_password_auth(delivery):
+                caption = (
+                    "📂 <b>فایل کانفیگ OpenVPN</b>\n\n"
+                    f"🆔 کد کانفیگ: <code>{config_id}</code>"
+                )
+            else:
+                caption = (
+                    "🎉 <b>سرویس شما آماده است!</b>\n\n"
+                    f"🆔 کد کانفیگ: <code>{config_id}</code>\n"
+                    "📂 فایل کانفیگ OpenVPN\n"
+                    "⚡ همین الان وارد شو و لذت ببر!"
+                )
+            await bot.send_document(
+                int(chat_id),
+                document,
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode="HTML",
+            )
+        elif delivery.get("delivery_type") == "link":
+            await bot.send_message(
+                int(chat_id),
+                "🎉 <b>لینک سرویس V2Ray شما:</b>\n\n"
+                f"🔗 <code>{delivery['content']}</code>\n\n"
+                "⚡ لینک را در برنامه V2Ray وارد کن.",
+                reply_markup=reply_markup,
+                parse_mode="HTML",
+            )
+        elif delivery.get("delivery_type") == "openvpn_credentials":
+            return True
+        else:
+            return False
+        return True
+    except Exception:
+        LOGGER.exception("Failed to deliver configuration to chat_id=%s", chat_id)
+        return False
 
 
 async def send_delivery_to_chat(
@@ -102,40 +182,12 @@ async def send_delivery_to_chat(
     *,
     reply_markup=None,
 ) -> bool:
-    if not delivery:
-        return False
-    try:
-        if delivery["delivery_type"] == "file":
-            document = BufferedInputFile(
-                delivery["content"].encode("utf-8"),
-                filename=delivery.get("filename") or "config.ovpn",
-            )
-            config_id = delivery.get("filename", "").removesuffix(".ovpn") or "—"
-            await bot.send_document(
-                int(chat_id),
-                document,
-                caption=(
-                    "🎉 <b>سرویس شما آماده است!</b>\n\n"
-                    f"🆔 کد کانفیگ: <code>{config_id}</code>\n"
-                    "📂 فایل کانفیگ OpenVPN\n"
-                    "⚡ همین الان وارد شو و لذت ببر!"
-                ),
-                reply_markup=reply_markup,
-                parse_mode="HTML",
-            )
-        else:
-            await bot.send_message(
-                int(chat_id),
-                "🎉 <b>لینک سرویس V2Ray شما:</b>\n\n"
-                f"🔗 <code>{delivery['content']}</code>\n\n"
-                "⚡ لینک را در برنامه V2Ray وارد کن.",
-                reply_markup=reply_markup,
-                parse_mode="HTML",
-            )
-        return True
-    except Exception:
-        LOGGER.exception("Failed to deliver configuration to chat_id=%s", chat_id)
-        return False
+    return await send_openvpn_delivery_to_chat(
+        bot,
+        chat_id,
+        delivery,
+        reply_markup=reply_markup,
+    )
 
 
 async def resolve_purchase_delivery(
@@ -205,7 +257,7 @@ async def handle_admin_api_error(event: CallbackQuery | Message, exc: Exception)
     if isinstance(exc, httpx.HTTPStatusError):
         if exc.response.status_code == 403:
             if isinstance(event, CallbackQuery):
-                await event.answer(ADMIN_FORBIDDEN_MESSAGE, show_alert=True)
+                await answer_callback(event, ADMIN_FORBIDDEN_MESSAGE, show_alert=True)
             else:
                 await event.answer(ADMIN_FORBIDDEN_MESSAGE)
             return True
@@ -218,7 +270,7 @@ async def handle_admin_api_error(event: CallbackQuery | Message, exc: Exception)
                 pass
             message = f"⚠️ خطا: {detail}"
             if isinstance(event, CallbackQuery):
-                await event.answer(message, show_alert=True)
+                await answer_callback(event, message, show_alert=True)
             else:
                 await event.answer(message)
             return True

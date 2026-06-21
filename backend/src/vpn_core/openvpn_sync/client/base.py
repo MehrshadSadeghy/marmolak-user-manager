@@ -10,8 +10,32 @@ class OpenVpnClient(ABC):
         pass
 
     @abstractmethod
-    async def create_user(self, server: Server, user: OpenVpnUser) -> str:
+    async def create_user(
+        self,
+        server: Server,
+        user: OpenVpnUser,
+        *,
+        auth_mode: str | None = None,
+    ) -> str:
         """Create OpenVPN user on node; returns .ovpn config content."""
+        pass
+
+    @abstractmethod
+    async def create_auth_user(self, server: Server, username: str, password_hash: str) -> dict:
+        """Store username/password hash on node for auth-user-pass verification."""
+        pass
+
+    @abstractmethod
+    async def rotate_auth_user(self, server: Server, username: str, password_hash: str) -> dict:
+        pass
+
+    @abstractmethod
+    async def delete_auth_user(self, server: Server, username: str) -> None:
+        pass
+
+    @abstractmethod
+    async def apply_auth_mode(self, server: Server, auth_mode: str) -> dict:
+        """Apply OpenVPN server auth mode (certificate/dual/user_pass) on the node host."""
         pass
 
     @abstractmethod

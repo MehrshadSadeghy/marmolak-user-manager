@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from vpn_core.bot_gateway_domain.api.v1.dependency import BotGatewayServiceDep
+from vpn_core.bot_gateway_domain.api.v1.pasarguard_dependency import PasarguardPanelServiceDep
 from vpn_core.bot_gateway_domain.api.v1.dto import (
     AdminPaymentReviewDTO,
     AdminOpenVpnServerListResponseDTO,
@@ -18,6 +19,12 @@ from vpn_core.bot_gateway_domain.api.v1.dto import (
     PaymentMethodListResponseDTO,
     PaymentRequestResponseDTO,
     PendingPaymentsResponseDTO,
+    PasarguardConnectDTO,
+    PasarguardConnectionResponseDTO,
+    PasarguardPanelAppDTO,
+    PasarguardPanelLinkDTO,
+    PasarguardPanelSettingsDTO,
+    PasarguardSubscriptionInfoDTO,
     PlanListResponseDTO,
     PurchasePreviewDTO,
     PurchaseRequestDTO,
@@ -40,16 +47,32 @@ from vpn_core.common.auth.bot_api_key import verify_admin_telegram_id, verify_bo
 router = APIRouter(prefix="/api/v1/bot", tags=["bot"], dependencies=[Depends(verify_bot_api_key)])
 
 
+def _service_delivery_dto(delivery) -> ServiceDeliveryDTO:
+    password = delivery.password if delivery.includes_password else None
+    return ServiceDeliveryDTO(
+        service_type=delivery.service_type,
+        subscription_id=delivery.subscription_id,
+        delivery_type=delivery.delivery_type,
+        content=delivery.content,
+        filename=delivery.filename,
+        config_id=delivery.config_id,
+        username=delivery.username,
+        password=password,
+        includes_password=delivery.includes_password,
+        server_host=delivery.server_host,
+        server_port=delivery.server_port,
+        server_proto=delivery.server_proto,
+        expire_at=delivery.expire_at,
+        traffic_limit_bytes=delivery.traffic_limit_bytes,
+        traffic_used_bytes=delivery.traffic_used_bytes,
+        remaining_bytes=delivery.remaining_bytes,
+        remaining_days=delivery.remaining_days,
+        auth_mode=delivery.auth_mode,
+    )
+
+
 def _purchase_result_dto(result) -> PurchaseResultDTO:
-    delivery = None
-    if result.delivery:
-        delivery = ServiceDeliveryDTO(
-            service_type=result.delivery.service_type,
-            subscription_id=result.delivery.subscription_id,
-            delivery_type=result.delivery.delivery_type,
-            content=result.delivery.content,
-            filename=result.delivery.filename,
-        )
+    delivery = _service_delivery_dto(result.delivery) if result.delivery else None
     return PurchaseResultDTO(
         subscription=result.subscription,
         wallet_balance_toman=result.wallet_balance_toman,
@@ -224,6 +247,9 @@ async def list_user_services(
                 "remaining_data_label": BotGatewayService.format_bytes(item.remaining_bytes),
                 "expire_at": item.subscription.expire_at.isoformat(),
                 "config_ids": item.config_ids,
+                "migratable_config_ids": item.migratable_config_ids,
+                "finalizable_config_ids": item.finalizable_config_ids,
+                "password_config_ids": item.password_config_ids,
             }
         )
     return UserServicesResponseDTO(services=items)
@@ -242,13 +268,7 @@ async def get_subscription_delivery(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     delivery = await service.get_subscription_delivery(user.id, subscription_id)
-    return ServiceDeliveryDTO(
-        service_type=delivery.service_type,
-        subscription_id=delivery.subscription_id,
-        delivery_type=delivery.delivery_type,
-        content=delivery.content,
-        filename=delivery.filename,
-    )
+    return _service_delivery_dto(delivery)
 
 
 @router.get(
@@ -264,13 +284,71 @@ async def get_openvpn_config_delivery(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     delivery = await service.get_openvpn_config_delivery(user.id, config_id)
-    return ServiceDeliveryDTO(
-        service_type=delivery.service_type,
-        subscription_id=delivery.subscription_id or 0,
-        delivery_type=delivery.delivery_type,
-        content=delivery.content,
-        filename=delivery.filename,
-    )
+    return _service_delivery_dto(delivery)
+
+
+@router.get(
+    "/users/{telegram_id}/openvpn/configs/{config_id}/credentials",
+    response_model=ServiceDeliveryDTO,
+)
+async def get_openvpn_credential_view(
+    telegram_id: Annotated[str, Path()],
+    config_id: Annotated[str, Path()],
+    service: BotGatewayServiceDep,
+) -> ServiceDeliveryDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    delivery = await service.get_openvpn_credential_view(user.id, config_id)
+    return _service_delivery_dto(delivery)
+
+
+@router.post(
+    "/users/{telegram_id}/openvpn/configs/{config_id}/credentials/rotate",
+    response_model=ServiceDeliveryDTO,
+)
+async def rotate_openvpn_credentials(
+    telegram_id: Annotated[str, Path()],
+    config_id: Annotated[str, Path()],
+    service: BotGatewayServiceDep,
+) -> ServiceDeliveryDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    delivery = await service.rotate_openvpn_credentials(user.id, config_id)
+    return _service_delivery_dto(delivery)
+
+
+@router.post(
+    "/users/{telegram_id}/openvpn/configs/{config_id}/credentials/migrate",
+    response_model=ServiceDeliveryDTO,
+)
+async def migrate_openvpn_credentials(
+    telegram_id: Annotated[str, Path()],
+    config_id: Annotated[str, Path()],
+    service: BotGatewayServiceDep,
+) -> ServiceDeliveryDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    delivery = await service.migrate_openvpn_credentials(user.id, config_id)
+    return _service_delivery_dto(delivery)
+
+
+@router.post(
+    "/users/{telegram_id}/openvpn/configs/{config_id}/credentials/finalize",
+    response_model=ServiceDeliveryDTO,
+)
+async def finalize_openvpn_auth_migration(
+    telegram_id: Annotated[str, Path()],
+    config_id: Annotated[str, Path()],
+    service: BotGatewayServiceDep,
+) -> ServiceDeliveryDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    delivery = await service.finalize_openvpn_auth_migration(user.id, config_id)
+    return _service_delivery_dto(delivery)
 
 
 @router.post("/openvpn/config-traffic", response_model=ConfigTrafficStatusDTO)
@@ -296,6 +374,72 @@ async def get_openvpn_config_traffic(
         remaining_data_label=BotGatewayService.format_bytes(summary.remaining_bytes),
         expire_at=summary.expire_at.isoformat(),
     )
+
+
+def _pasarguard_connection_dto(payload: dict) -> PasarguardConnectionResponseDTO:
+    link = payload["link"]
+    info = payload.get("info")
+    return PasarguardConnectionResponseDTO(
+        link=PasarguardPanelLinkDTO(
+            panel_username=link.panel_username,
+            subscription_url=link.subscription_url,
+            subscription_token=link.subscription_token,
+        ),
+        info=PasarguardSubscriptionInfoDTO(**info) if info else None,
+        apps=[PasarguardPanelAppDTO(**app) for app in payload.get("apps") or []],
+        error=payload.get("error"),
+    )
+
+
+@router.get("/pasarguard/panel", response_model=PasarguardPanelSettingsDTO)
+async def get_pasarguard_panel_settings(
+    service: PasarguardPanelServiceDep,
+) -> PasarguardPanelSettingsDTO:
+    settings = service.get_panel_settings()
+    return PasarguardPanelSettingsDTO(**settings)
+
+
+@router.post("/pasarguard/connect", response_model=PasarguardConnectionResponseDTO)
+async def connect_pasarguard_panel(
+    body: PasarguardConnectDTO,
+    gateway: BotGatewayServiceDep,
+    panel_service: PasarguardPanelServiceDep,
+) -> PasarguardConnectionResponseDTO:
+    user = await gateway.get_user_by_telegram(body.telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    result = await panel_service.connect_user_panel(user.id, body.subscription_input)
+    return _pasarguard_connection_dto(result)
+
+
+@router.get("/pasarguard/users/{telegram_id}/connection", response_model=PasarguardConnectionResponseDTO)
+async def get_pasarguard_connection(
+    telegram_id: Annotated[str, Path()],
+    gateway: BotGatewayServiceDep,
+    panel_service: PasarguardPanelServiceDep,
+) -> PasarguardConnectionResponseDTO:
+    user = await gateway.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    result = await panel_service.get_user_connection(user.id)
+    if not result:
+        raise HTTPException(status_code=404, detail="PasarGuard panel is not connected")
+    return _pasarguard_connection_dto(result)
+
+
+@router.get(
+    "/pasarguard/users/{telegram_id}/openvpn-delivery",
+    response_model=ServiceDeliveryDTO,
+)
+async def get_pasarguard_openvpn_delivery(
+    telegram_id: Annotated[str, Path()],
+    gateway: BotGatewayServiceDep,
+) -> ServiceDeliveryDTO:
+    user = await gateway.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    delivery = await gateway.get_first_openvpn_delivery(user.id)
+    return _service_delivery_dto(delivery)
 
 
 @router.get("/support", response_model=SupportResponseDTO)

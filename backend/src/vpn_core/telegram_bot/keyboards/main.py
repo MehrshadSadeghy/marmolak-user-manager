@@ -1,7 +1,7 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 
-def main_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup:
+def main_menu_keyboard(is_admin: bool, *, pasarguard_enabled: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="🛒 خرید سرویس جدید", callback_data="menu:buy")],
         [InlineKeyboardButton(text="🔄 تمدید سرویس", callback_data="menu:renew")],
@@ -10,6 +10,10 @@ def main_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📊 استعلام حجم کانفیگ", callback_data="menu:config-traffic")],
         [InlineKeyboardButton(text="💬 پشتیبانی", callback_data="menu:support")],
     ]
+    if pasarguard_enabled:
+        rows.append(
+            [InlineKeyboardButton(text="🔗 افزودن پنل پاسارگارد", callback_data="menu:pasarguard")]
+        )
     if is_admin:
         rows.append([InlineKeyboardButton(text="⚙️ پنل مدیریت", callback_data="menu:admin")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -111,6 +115,9 @@ def user_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
         subscription_id = item["subscription_id"]
         if item.get("service_type") == "openvpn":
             config_ids = item.get("config_ids") or []
+            migratable = set(item.get("migratable_config_ids") or [])
+            finalizable = set(item.get("finalizable_config_ids") or [])
+            password_configs = set(item.get("password_config_ids") or [])
             if config_ids:
                 for config_id in config_ids:
                     rows.append(
@@ -121,6 +128,37 @@ def user_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
                             )
                         ]
                     )
+                    if config_id in migratable:
+                        rows.append(
+                            [
+                                InlineKeyboardButton(
+                                    text=f"🔐 ورود با نام کاربری/رمز — {config_id}",
+                                    callback_data=f"credentials:migrate:{config_id}",
+                                )
+                            ]
+                        )
+                    if config_id in password_configs:
+                        rows.append(
+                            [
+                                InlineKeyboardButton(
+                                    text=f"ℹ️ اطلاعات اتصال — {config_id}",
+                                    callback_data=f"credentials:view:{config_id}",
+                                ),
+                                InlineKeyboardButton(
+                                    text=f"🔑 بازیابی رمز — {config_id}",
+                                    callback_data=f"credentials:rotate:{config_id}",
+                                ),
+                            ]
+                        )
+                    if config_id in finalizable:
+                        rows.append(
+                            [
+                                InlineKeyboardButton(
+                                    text=f"✅ حذف گواهی قدیمی — {config_id}",
+                                    callback_data=f"credentials:finalize:{config_id}",
+                                )
+                            ]
+                        )
             else:
                 rows.append(
                     [
@@ -149,20 +187,58 @@ def renew_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def admin_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👥 مدیریت کاربران", callback_data="admin:users")],
-            [InlineKeyboardButton(text="⏳ پرداخت‌های در انتظار", callback_data="admin:payments")],
-            [InlineKeyboardButton(text="🔧 انواع سرویس", callback_data="admin:services")],
-            [InlineKeyboardButton(text="📋 پلن‌ها", callback_data="admin:plans")],
-            [InlineKeyboardButton(text="💳 روش‌های پرداخت", callback_data="admin:payment-methods")],
-            [InlineKeyboardButton(text="📊 گزارش مالی", callback_data="admin:report")],
-            [InlineKeyboardButton(text="🖥 سرورها و ظرفیت", callback_data="admin:servers")],
-            [InlineKeyboardButton(text="🔌 OpenVPN پورت/پروتکل", callback_data="admin:openvpn-endpoint")],
-            [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="menu:home")],
-        ]
+def pasarguard_panel_keyboard(
+    *,
+    webapp_url: str | None,
+    apps: list[dict] | None = None,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if webapp_url and webapp_url.startswith("https://"):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🎛 افزودن پنل پاسارگارد",
+                    web_app=WebAppInfo(url=webapp_url),
+                )
+            ]
+        )
+    for app in apps or []:
+        import_url = app.get("import_url")
+        if not import_url:
+            continue
+        label = f"📲 {app.get('name', 'App')}"
+        if app.get("recommended"):
+            label = f"⭐ {app.get('name', 'App')}"
+        rows.append([InlineKeyboardButton(text=label, url=import_url)])
+    rows.append(
+        [InlineKeyboardButton(text="📥 دریافت فایل OpenVPN", callback_data="pasarguard:openvpn")]
     )
+    rows.append([InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="menu:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_menu_keyboard(*, pasarguard_webapp_url: str | None = None) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text="👥 مدیریت کاربران", callback_data="admin:users")],
+        [InlineKeyboardButton(text="⏳ پرداخت‌های در انتظار", callback_data="admin:payments")],
+        [InlineKeyboardButton(text="🔧 انواع سرویس", callback_data="admin:services")],
+        [InlineKeyboardButton(text="📋 پلن‌ها", callback_data="admin:plans")],
+        [InlineKeyboardButton(text="💳 روش‌های پرداخت", callback_data="admin:payment-methods")],
+        [InlineKeyboardButton(text="📊 گزارش مالی", callback_data="admin:report")],
+        [InlineKeyboardButton(text="🖥 سرورها و ظرفیت", callback_data="admin:servers")],
+        [InlineKeyboardButton(text="🔌 OpenVPN پورت/پروتکل", callback_data="admin:openvpn-endpoint")],
+    ]
+    if pasarguard_webapp_url and pasarguard_webapp_url.startswith("https://"):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🎛 پنل پاسارگارد",
+                    web_app=WebAppInfo(url=pasarguard_webapp_url),
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="menu:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def admin_payment_keyboard(payment_id: int) -> InlineKeyboardMarkup:

@@ -168,7 +168,11 @@ async def _complete_purchase(
                 reply_markup=back_to_menu_keyboard(),
             )
         else:
-            prefix = f"buy:sv:{server_id}" if server_id is not None else f"buy:{plan_id}"
+            prefix = (
+                f"buy:sv:{server_id}:plan:{plan_id}"
+                if server_id is not None
+                else f"buy:{plan_id}"
+            )
             await edit_callback_message(message, 
                 "💳 <b>موجودی کافی نیست</b>\n\n"
                 f"💰 مبلغ پلن: <b>{format_toman(preview['price_toman'])}</b>\n"

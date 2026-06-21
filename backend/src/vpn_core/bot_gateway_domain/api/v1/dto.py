@@ -49,6 +49,19 @@ class ServiceDeliveryDTO(BaseModel):
     delivery_type: str
     content: str
     filename: str | None = None
+    config_id: str | None = None
+    username: str | None = None
+    password: str | None = None
+    includes_password: bool = False
+    server_host: str | None = None
+    server_port: int | None = None
+    server_proto: str | None = None
+    expire_at: str | None = None
+    traffic_limit_bytes: int | None = None
+    traffic_used_bytes: int | None = None
+    remaining_bytes: int | None = None
+    remaining_days: int | None = None
+    auth_mode: str | None = None
 
 
 class PurchaseResultDTO(BaseModel):
@@ -206,3 +219,45 @@ class ApplyOpenVpnEndpointResponseDTO(BaseModel):
     firewall_rule_added: bool
     env_file_updated: bool
     message: str
+
+
+class PasarguardPanelSettingsDTO(BaseModel):
+    enabled: bool
+    panel_base_url: str | None = None
+    subscription_path: str = "sub"
+    webapp_url: str | None = None
+
+
+class PasarguardConnectDTO(BaseModel):
+    telegram_id: str
+    subscription_input: str
+
+
+class PasarguardSubscriptionInfoDTO(BaseModel):
+    username: str | None = None
+    status: str | None = None
+    data_limit_label: str
+    used_traffic_label: str
+    expire_at: str
+    days_left: int | str
+    subscription_url: str
+
+
+class PasarguardPanelAppDTO(BaseModel):
+    name: str
+    platform: str | None = None
+    recommended: bool = False
+    import_url: str
+
+
+class PasarguardPanelLinkDTO(BaseModel):
+    panel_username: str
+    subscription_url: str
+    subscription_token: str
+
+
+class PasarguardConnectionResponseDTO(BaseModel):
+    link: PasarguardPanelLinkDTO
+    info: PasarguardSubscriptionInfoDTO | None = None
+    apps: list[PasarguardPanelAppDTO] = Field(default_factory=list)
+    error: str | None = None

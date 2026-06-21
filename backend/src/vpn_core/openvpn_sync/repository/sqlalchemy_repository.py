@@ -9,6 +9,7 @@ from vpn_core.openvpn_sync.domain.openvpn_client_credential import (
     OpenVpnClientCredential,
     OpenVpnConfigStatus,
 )
+from vpn_core.openvpn_sync.domain.auth_mode import OpenVpnAuthMode
 from vpn_core.openvpn_sync.domain.openvpn_traffic import OpenVpnTrafficUsage
 from vpn_core.openvpn_sync.repository.base import OpenVpnCredentialRepository, OpenVpnTrafficRepository
 
@@ -23,6 +24,11 @@ def _credential_from_orm(obj: OpenVpnClientCredentialORM) -> OpenVpnClientCreden
         common_name=obj.common_name,
         slot_index=obj.slot_index,
         ovpn_content=obj.ovpn_content,
+        auth_mode=OpenVpnAuthMode(obj.auth_mode),
+        vpn_username=obj.vpn_username,
+        password_hash=obj.password_hash,
+        password_rotated_at=obj.password_rotated_at,
+        auth_synced_at=obj.auth_synced_at,
         status=OpenVpnConfigStatus(obj.status),
         created_at=obj.created_at,
         revoked_at=obj.revoked_at,
@@ -48,6 +54,11 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
             existing.status = credential.status.value
             existing.subscription_id = credential.subscription_id
             existing.last_status_bytes = credential.last_status_bytes
+            existing.auth_mode = credential.auth_mode.value
+            existing.vpn_username = credential.vpn_username
+            existing.password_hash = credential.password_hash
+            existing.password_rotated_at = credential.password_rotated_at
+            existing.auth_synced_at = credential.auth_synced_at
             obj = existing
         else:
             obj = OpenVpnClientCredentialORM(
@@ -58,6 +69,11 @@ class OpenVpnCredentialDBRepository(OpenVpnCredentialRepository):
                 common_name=credential.common_name,
                 slot_index=credential.slot_index,
                 ovpn_content=credential.ovpn_content,
+                auth_mode=credential.auth_mode.value,
+                vpn_username=credential.vpn_username,
+                password_hash=credential.password_hash,
+                password_rotated_at=credential.password_rotated_at,
+                auth_synced_at=credential.auth_synced_at,
                 status=credential.status.value,
                 last_status_bytes=credential.last_status_bytes,
             )

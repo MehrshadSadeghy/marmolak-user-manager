@@ -128,8 +128,54 @@ class UserManagerApiClient:
             f"/api/v1/bot/users/{telegram_id}/openvpn/configs/{config_id}/delivery",
         )
 
+    async def get_openvpn_credential_view(self, telegram_id: str, config_id: str) -> dict:
+        return await self._request(
+            "GET",
+            f"/api/v1/bot/users/{telegram_id}/openvpn/configs/{config_id}/credentials",
+        )
+
+    async def rotate_openvpn_credentials(self, telegram_id: str, config_id: str) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/bot/users/{telegram_id}/openvpn/configs/{config_id}/credentials/rotate",
+        )
+
+    async def migrate_openvpn_credentials(self, telegram_id: str, config_id: str) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/bot/users/{telegram_id}/openvpn/configs/{config_id}/credentials/migrate",
+        )
+
+    async def finalize_openvpn_auth_migration(self, telegram_id: str, config_id: str) -> dict:
+        return await self._request(
+            "POST",
+            f"/api/v1/bot/users/{telegram_id}/openvpn/configs/{config_id}/credentials/finalize",
+        )
+
     async def get_support(self) -> dict:
         return await self._request("GET", "/api/v1/bot/support")
+
+    async def get_pasarguard_panel_settings(self) -> dict:
+        return await self._request("GET", "/api/v1/bot/pasarguard/panel")
+
+    async def connect_pasarguard_panel(self, telegram_id: str, subscription_input: str) -> dict:
+        return await self._request(
+            "POST",
+            "/api/v1/bot/pasarguard/connect",
+            json={
+                "telegram_id": telegram_id,
+                "subscription_input": subscription_input,
+            },
+        )
+
+    async def get_pasarguard_connection(self, telegram_id: str) -> dict:
+        return await self._request("GET", f"/api/v1/bot/pasarguard/users/{telegram_id}/connection")
+
+    async def get_pasarguard_openvpn_delivery(self, telegram_id: str) -> dict:
+        return await self._request(
+            "GET",
+            f"/api/v1/bot/pasarguard/users/{telegram_id}/openvpn-delivery",
+        )
 
     async def initiate_topup(self, telegram_id: str, amount_toman: int) -> dict:
         return await self._request(

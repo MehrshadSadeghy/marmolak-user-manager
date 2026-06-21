@@ -21,6 +21,11 @@ class OpenVpnClientCredentialORM(Base):
     common_name: Mapped[str] = mapped_column(String(255), nullable=False)
     slot_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     ovpn_content: Mapped[str] = mapped_column(Text, nullable=False)
+    auth_mode: Mapped[str] = mapped_column(String(32), default="certificate", nullable=False)
+    vpn_username: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auth_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     last_status_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

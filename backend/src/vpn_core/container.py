@@ -25,8 +25,12 @@ from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
     OpenVpnCredentialDBRepository,
     OpenVpnTrafficDBRepository,
 )
+from vpn_core.openvpn_sync.services.openvpn_credential_delivery_service import (
+    OpenVpnCredentialDeliveryService,
+)
 from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
+from vpn_core.openvpn_sync.services.password_service import PasswordService
 from vpn_core.openvpn_sync.services.server_capacity_service import ServerCapacityService
 from vpn_core.openvpn_sync.client.factory import OpenVpnClientFactory
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
@@ -36,6 +40,8 @@ from vpn_core.openvpn_sync.services.subscription_expiry_enforcement_service impo
     SubscriptionExpiryEnforcementService,
 )
 from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTrafficService
+from vpn_core.pasarguard_panel_domain.repository.sqlalchemy_repository import PasarguardPanelLinkDBRepository
+from vpn_core.pasarguard_panel_domain.service import PasarguardPanelService
 from vpn_core.server_management_domain.api.v1.router import router as server_router
 from vpn_core.server_management_domain.repository.sqlalchemy_repository import ServerDBRepository
 from vpn_core.server_management_domain.service import ServerService
@@ -55,6 +61,7 @@ from vpn_core.telegram_bot.manager import TelegramBotManager
 import vpn_core.billing_domain.db_model  # noqa: F401
 import vpn_core.commerce_domain.db_model  # noqa: F401
 import vpn_core.openvpn_sync.db_model  # noqa: F401
+import vpn_core.pasarguard_panel_domain.db_model  # noqa: F401
 import vpn_core.server_management_domain.db_model  # noqa: F401
 import vpn_core.subscription_domain.db_model  # noqa: F401
 import vpn_core.user_admin_domain.db_model  # noqa: F401
@@ -173,6 +180,7 @@ class AppContainer:
             subscription_repository=SubscriptionDBRepository(session=session),
             credential_repository=OpenVpnCredentialDBRepository(session=session),
             capacity_service=self.build_server_capacity_service(session),
+            password_service=PasswordService(),
         )
 
     def build_openvpn_traffic_service(self, session: Session) -> OpenVpnTrafficService:
@@ -212,6 +220,11 @@ class AppContainer:
             provisioning_service=self.build_openvpn_provisioning_service(session),
         )
 
+    def build_openvpn_delivery_service(self, session: Session) -> OpenVpnCredentialDeliveryService:
+        return OpenVpnCredentialDeliveryService(
+            server_service=self.build_server_service(session),
+        )
+
     def build_bot_gateway_service(self, session: Session) -> BotGatewayService:
         return BotGatewayService(
             subscription_service=self.build_subscription_service(session),
@@ -219,10 +232,16 @@ class AppContainer:
             commerce_service=self.build_commerce_service(session),
             openvpn_service=self.build_openvpn_provisioning_service(session),
             openvpn_endpoint_service=self.build_openvpn_endpoint_service(session),
+            openvpn_delivery_service=self.build_openvpn_delivery_service(session),
             server_service=self.build_server_service(session),
             capacity_service=self.build_server_capacity_service(session),
             user_admin_service=self.build_user_admin_service(session),
             traffic_enforcement_service=self.build_openvpn_traffic_enforcement_service(session),
             expiry_enforcement_service=self.build_subscription_expiry_enforcement_service(session),
             subscription_base_url=self.get_subscription_base_url(),
+        )
+
+    def build_pasarguard_panel_service(self, session: Session) -> PasarguardPanelService:
+        return PasarguardPanelService(
+            repository=PasarguardPanelLinkDBRepository(session=session),
         )

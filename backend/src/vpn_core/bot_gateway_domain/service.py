@@ -17,9 +17,15 @@ from vpn_core.billing_domain.domain.payment_request import PaymentPurpose, Payme
 from vpn_core.billing_domain.domain.queries import ListPaymentRequestsQuery
 from vpn_core.billing_domain.service import BillingService
 from vpn_core.commerce_domain.service import CommerceService
+from vpn_core.openvpn_sync.domain.auth_mode import OpenVpnAuthMode
 from vpn_core.openvpn_sync.domain.commands import ProvisionOpenVpnCommand
 from vpn_core.openvpn_sync.domain.openvpn_client_credential import OpenVpnConfigStatus
+from vpn_core.openvpn_sync.services.openvpn_credential_delivery_service import OpenVpnCredentialDeliveryService
 from vpn_core.openvpn_sync.services.openvpn_endpoint_service import OpenVpnEndpointService
+from vpn_core.openvpn_sync.services.openvpn_migration_helpers import (
+    can_finalize_auth_migration,
+    can_migrate_legacy_credential,
+)
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
 from vpn_core.openvpn_sync.services.server_capacity_service import ServerCapacityService
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
@@ -55,6 +61,19 @@ class ServiceConfigDelivery:
     delivery_type: str
     content: str
     filename: str | None = None
+    config_id: str | None = None
+    username: str | None = None
+    password: str | None = None
+    includes_password: bool = False
+    server_host: str | None = None
+    server_port: int | None = None
+    server_proto: str | None = None
+    expire_at: str | None = None
+    traffic_limit_bytes: int | None = None
+    traffic_used_bytes: int | None = None
+    remaining_bytes: int | None = None
+    remaining_days: int | None = None
+    auth_mode: str | None = None
 
 
 @dataclass
@@ -66,6 +85,17 @@ class UserServiceSummary:
     remaining_bytes: int
     status_label: str
     config_ids: list[str]
+    migratable_config_ids: list[str] = None
+    finalizable_config_ids: list[str] = None
+    password_config_ids: list[str] = None
+
+    def __post_init__(self) -> None:
+        if self.migratable_config_ids is None:
+            self.migratable_config_ids = []
+        if self.finalizable_config_ids is None:
+            self.finalizable_config_ids = []
+        if self.password_config_ids is None:
+            self.password_config_ids = []
 
 
 @dataclass
@@ -125,6 +155,7 @@ class BotGatewayService:
         user_admin_service: UserAdminService,
         traffic_enforcement_service: OpenVpnTrafficEnforcementService,
         expiry_enforcement_service: SubscriptionExpiryEnforcementService,
+        openvpn_delivery_service: OpenVpnCredentialDeliveryService,
         subscription_base_url: str,
     ):
         self._subscription_service = subscription_service
@@ -132,6 +163,7 @@ class BotGatewayService:
         self._commerce_service = commerce_service
         self._openvpn_service = openvpn_service
         self._openvpn_endpoint_service = openvpn_endpoint_service
+        self._openvpn_delivery_service = openvpn_delivery_service
         self._server_service = server_service
         self._capacity_service = capacity_service
         self._user_admin_service = user_admin_service
@@ -457,6 +489,11 @@ class BotGatewayService:
                         subscription.id,
                         subscription.service_type,
                     ),
+                    **await self._openvpn_migration_config_ids(
+                        user_id,
+                        subscription.id,
+                        subscription.service_type,
+                    ),
                 )
             )
         return summaries
@@ -475,6 +512,37 @@ class BotGatewayService:
         )
         return [credential.common_name for credential in credentials if self._is_valid_ovpn(credential.ovpn_content)]
 
+    async def _openvpn_migration_config_ids(
+        self,
+        user_id: int,
+        subscription_id: int | None,
+        service_type: str,
+    ) -> dict[str, list[str]]:
+        if subscription_id is None or service_type != "openvpn":
+            return {"migratable_config_ids": [], "finalizable_config_ids": [], "password_config_ids": []}
+
+        credentials = await self._openvpn_service.get_configs_for_subscription(
+            user_id,
+            subscription_id,
+        )
+        migratable: list[str] = []
+        finalizable: list[str] = []
+        password_configs: list[str] = []
+        for credential in credentials:
+            if not self._is_valid_ovpn(credential.ovpn_content):
+                continue
+            if credential.auth_mode != OpenVpnAuthMode.certificate:
+                password_configs.append(credential.common_name)
+            if can_migrate_legacy_credential(credential):
+                migratable.append(credential.common_name)
+            if can_finalize_auth_migration(credential):
+                finalizable.append(credential.common_name)
+        return {
+            "migratable_config_ids": migratable,
+            "finalizable_config_ids": finalizable,
+            "password_config_ids": password_configs,
+        }
+
     async def get_subscription_delivery(
         self,
         user_id: int,
@@ -489,6 +557,17 @@ class BotGatewayService:
         if not delivery:
             raise HTTPException(status_code=404, detail="Configuration not available for this service")
         return delivery
+
+    async def get_first_openvpn_delivery(self, user_id: int) -> ServiceConfigDelivery:
+        summaries = await self.list_user_services(user_id)
+        for item in summaries:
+            if item.subscription.service_type != "openvpn":
+                continue
+            try:
+                return await self.get_subscription_delivery(user_id, item.subscription.id)
+            except HTTPException:
+                continue
+        raise HTTPException(status_code=404, detail="No OpenVPN configuration available")
 
     async def get_openvpn_config_delivery(
         self,
@@ -511,13 +590,90 @@ class BotGatewayService:
                 if subscription:
                     return await self.get_subscription_delivery(user_id, subscription_id)
             raise HTTPException(status_code=404, detail="Configuration not available")
-        return ServiceConfigDelivery(
-            service_type="openvpn",
-            subscription_id=credential.subscription_id or 0,
-            delivery_type="file",
-            content=credential.ovpn_content,
-            filename=f"{credential.common_name}.ovpn",
+        if not credential.subscription_id:
+            raise HTTPException(status_code=404, detail="Subscription not linked to config")
+
+        subscription = await self._subscription_service.get_subscription(
+            GetSubscriptionQuery(subscription_id=credential.subscription_id)
         )
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        return await self._build_openvpn_delivery(subscription, credential)
+
+    async def get_openvpn_credential_view(
+        self,
+        user_id: int,
+        config_id: str,
+    ) -> ServiceConfigDelivery:
+        config_id = config_id.strip()
+        if len(config_id) != 10 or not config_id.isdigit():
+            raise HTTPException(status_code=400, detail="Config ID must be exactly 10 digits")
+
+        credential = await self._openvpn_service.get_config_by_config_id(user_id, config_id)
+        if not credential:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+        subscription = await self._subscription_service.get_subscription(
+            GetSubscriptionQuery(subscription_id=credential.subscription_id)
+        )
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+
+        payload = await self._openvpn_delivery_service.build_delivery(
+            subscription,
+            credential,
+            include_ovpn_file=False,
+        )
+        return ServiceConfigDelivery(**payload)
+
+    async def rotate_openvpn_credentials(
+        self,
+        user_id: int,
+        config_id: str,
+    ) -> ServiceConfigDelivery:
+        credential, plaintext_password = await self._openvpn_service.rotate_password(user_id, config_id)
+        subscription = await self._subscription_service.get_subscription(
+            GetSubscriptionQuery(subscription_id=credential.subscription_id)
+        )
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        return await self._build_openvpn_delivery(
+            subscription,
+            credential,
+            ephemeral_password=plaintext_password,
+        )
+
+    async def migrate_openvpn_credentials(
+        self,
+        user_id: int,
+        config_id: str,
+    ) -> ServiceConfigDelivery:
+        credential, plaintext_password = await self._openvpn_service.migrate_legacy_to_auth(
+            user_id,
+            config_id,
+        )
+        subscription = await self._subscription_service.get_subscription(
+            GetSubscriptionQuery(subscription_id=credential.subscription_id)
+        )
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        return await self._build_openvpn_delivery(
+            subscription,
+            credential,
+            ephemeral_password=plaintext_password,
+        )
+
+    async def finalize_openvpn_auth_migration(
+        self,
+        user_id: int,
+        config_id: str,
+    ) -> ServiceConfigDelivery:
+        credential = await self._openvpn_service.finalize_auth_migration(user_id, config_id)
+        subscription = await self._subscription_service.get_subscription(
+            GetSubscriptionQuery(subscription_id=credential.subscription_id)
+        )
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        return await self._build_openvpn_delivery(subscription, credential)
 
     async def get_openvpn_config_traffic(
         self,
@@ -727,20 +883,27 @@ class BotGatewayService:
 
     @staticmethod
     def _is_valid_ovpn(content: str) -> bool:
-        return bool(content) and "MOCK-CA" not in content and "<ca>" in content
+        if not content or "MOCK-CA" in content:
+            return False
+        if "<ca>" in content:
+            return True
+        return "auth-user-pass" in content
 
-    def _credential_delivery(
+    async def _build_openvpn_delivery(
         self,
         subscription: Subscription,
         credential,
+        *,
+        ephemeral_password: str | None = None,
+        include_ovpn_file: bool = True,
     ) -> ServiceConfigDelivery:
-        return ServiceConfigDelivery(
-            service_type=subscription.service_type,
-            subscription_id=subscription.id,
-            delivery_type="file",
-            content=credential.ovpn_content,
-            filename=f"{credential.common_name}.ovpn",
+        payload = await self._openvpn_delivery_service.build_delivery(
+            subscription,
+            credential,
+            ephemeral_password=ephemeral_password,
+            include_ovpn_file=include_ovpn_file,
         )
+        return ServiceConfigDelivery(**payload)
 
     async def _delivery_from_existing_credentials(
         self,
@@ -754,7 +917,7 @@ class BotGatewayService:
         )
         for credential in credentials:
             if self._is_valid_ovpn(credential.ovpn_content):
-                return self._credential_delivery(subscription, credential)
+                return await self._build_openvpn_delivery(subscription, credential)
         return None
 
     async def _ensure_delivery_for_subscription(
@@ -810,7 +973,12 @@ class BotGatewayService:
                     status_code=502,
                     detail="OpenVPN node returned invalid configuration (check MOCK_MODE=false)",
                 )
-            return self._credential_delivery(subscription, credential)
+            ephemeral_password = result.ephemeral_passwords.get(credential.common_name)
+            return await self._build_openvpn_delivery(
+                subscription,
+                credential,
+                ephemeral_password=ephemeral_password,
+            )
 
         if subscription.service_type == "v2ray":
             url = f"{self._subscription_base_url}/sub/{subscription.uuid}"

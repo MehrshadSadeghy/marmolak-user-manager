@@ -11,21 +11,27 @@ from vpn_core.telegram_bot.handlers.common import (
     handle_admin_api_error,
     notify_user_chat,
 )
-from vpn_core.telegram_bot.keyboards.main import admin_menu_keyboard, admin_plans_keyboard, admin_services_keyboard, buy_now_keyboard
+from vpn_core.telegram_bot.handlers.menu_helpers import pasarguard_webapp_url
 from vpn_core.telegram_bot.messages import PURPOSE_FA, format_toman, wallet_recharged_message
+from vpn_core.telegram_bot.keyboards.main import admin_menu_keyboard, admin_plans_keyboard, admin_services_keyboard, buy_now_keyboard
 
 router = Router()
 LOGGER = logging.getLogger(__name__)
 
 
 @router.callback_query(F.data == "menu:admin")
-async def menu_admin(callback: CallbackQuery, bot_config: TelegramBotConfig) -> None:
+async def menu_admin(
+    callback: CallbackQuery,
+    api: UserManagerApiClient,
+    bot_config: TelegramBotConfig,
+) -> None:
     message = callback.message
     if not message or not await guard_admin_callback(callback, bot_config):
         return
+    webapp_url = await pasarguard_webapp_url(api)
     await edit_callback_message(message, 
         "⚙️ <b>پنل مدیریت</b>\n\n👇 یک گزینه را انتخاب کن:",
-        reply_markup=admin_menu_keyboard(),
+        reply_markup=admin_menu_keyboard(pasarguard_webapp_url=webapp_url),
         parse_mode="HTML",
     )
     await callback.answer()

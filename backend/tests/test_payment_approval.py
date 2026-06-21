@@ -49,6 +49,7 @@ def _service(**overrides) -> BotGatewayService:
         commerce_service=commerce_service,
         openvpn_service=openvpn_service,
         openvpn_endpoint_service=openvpn_endpoint_service,
+        openvpn_delivery_service=AsyncMock(),
         server_service=server_service,
         capacity_service=capacity_service,
         user_admin_service=user_admin_service,

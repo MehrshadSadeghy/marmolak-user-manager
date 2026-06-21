@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery, Message
 from vpn_core.telegram_bot.client.api_client import UserManagerApiClient
 from vpn_core.telegram_bot.config import TelegramBotConfig
 from vpn_core.telegram_bot.handlers.common import ensure_user, telegram_id, edit_callback_message
+from vpn_core.telegram_bot.handlers.menu_helpers import pasarguard_menu_enabled
 from vpn_core.telegram_bot.keyboards.main import main_menu_keyboard
 from vpn_core.telegram_bot.messages import main_menu_message, welcome_message
 
@@ -16,9 +17,10 @@ router = Router()
 async def cmd_start(message: Message, api: UserManagerApiClient, bot_config: TelegramBotConfig) -> None:
     user = await ensure_user(api, message)
     is_admin = telegram_id(message) in bot_config.admin_chat_ids
+    pasarguard_enabled = await pasarguard_menu_enabled(api)
     await message.answer(
         welcome_message(user["user"]["id"], user["wallet_balance_toman"]),
-        reply_markup=main_menu_keyboard(is_admin),
+        reply_markup=main_menu_keyboard(is_admin, pasarguard_enabled=pasarguard_enabled),
         parse_mode="HTML",
     )
 
@@ -37,9 +39,10 @@ async def menu_home(
         return
     user = await ensure_user(api, message)
     is_admin = str(callback.from_user.id) in bot_config.admin_chat_ids
+    pasarguard_enabled = await pasarguard_menu_enabled(api)
     await edit_callback_message(message, 
         main_menu_message(user["wallet_balance_toman"]),
-        reply_markup=main_menu_keyboard(is_admin),
+        reply_markup=main_menu_keyboard(is_admin, pasarguard_enabled=pasarguard_enabled),
         parse_mode="HTML",
     )
     await callback.answer()

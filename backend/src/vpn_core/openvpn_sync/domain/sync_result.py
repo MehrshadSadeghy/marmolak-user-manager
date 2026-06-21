@@ -23,3 +23,4 @@ class ProvisioningResult(BaseModel):
     credentials: list
     results: list[SyncOperationResult] = Field(default_factory=list)
     idempotent: bool = False
+    ephemeral_passwords: dict[str, str] = Field(default_factory=dict)

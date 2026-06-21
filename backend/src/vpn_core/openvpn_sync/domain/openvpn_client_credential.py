@@ -3,6 +3,8 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from vpn_core.openvpn_sync.domain.auth_mode import OpenVpnAuthMode
+
 
 class OpenVpnConfigStatus(str, Enum):
     active = "active"
@@ -22,6 +24,11 @@ class OpenVpnClientCredential(BaseModel):
     common_name: str
     slot_index: int = 0
     ovpn_content: str
+    auth_mode: OpenVpnAuthMode = OpenVpnAuthMode.certificate
+    vpn_username: str | None = None
+    password_hash: str | None = None
+    password_rotated_at: datetime | None = None
+    auth_synced_at: datetime | None = None
     status: OpenVpnConfigStatus = OpenVpnConfigStatus.active
     last_status_bytes: int = 0
     created_at: datetime | None = None
