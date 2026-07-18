@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, Response
-from fastapi.params import Path
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Path, Response
 
 from vpn_core.client_subscription_domain.api.v1.dependency import ClientSubscriptionServiceDep
 

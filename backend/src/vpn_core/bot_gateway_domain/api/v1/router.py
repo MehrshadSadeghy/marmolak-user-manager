@@ -18,6 +18,7 @@ from vpn_core.bot_gateway_domain.api.v1.dto import (
     ApplyOpenVpnEndpointResponseDTO,
     ApplyV2RayInboundConfigResponseDTO,
     PatchV2RayInboundConfigDTO,
+    V2RayInboundConfigDTO,
     V2RayInboundConfigResponseDTO,
     ConfigTrafficLookupDTO,
     ConfigTrafficStatusDTO,
