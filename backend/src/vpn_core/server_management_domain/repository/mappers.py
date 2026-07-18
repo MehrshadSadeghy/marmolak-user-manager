@@ -2,6 +2,7 @@ from vpn_core.server_management_domain.db_model.server import ServerORM
 from vpn_core.server_management_domain.domain.capacity import ServerCapacity
 from vpn_core.server_management_domain.domain.connection_info import ConnectionInfo
 from vpn_core.server_management_domain.domain.openvpn_settings import OpenVpnSettings
+from vpn_core.server_management_domain.domain.v2ray_settings import V2RaySettings
 from vpn_core.server_management_domain.domain.resource_monitoring import ResourceMonitoring
 from vpn_core.server_management_domain.domain.server import Server
 
@@ -41,6 +42,18 @@ def server_orm_to_domain(obj: ServerORM) -> Server:
             vpn_port=obj.vpn_port,
             vpn_proto=obj.vpn_proto,
         ),
+        v2ray=V2RaySettings(
+            enabled=obj.v2ray_enabled,
+            node_api_secret=obj.v2ray_node_api_secret,
+            node_api_port=obj.v2ray_node_api_port,
+            vpn_host=obj.v2ray_vpn_host,
+            vpn_port=obj.v2ray_vpn_port,
+            ws_path=obj.v2ray_ws_path,
+            network=obj.v2ray_network,
+            security=obj.v2ray_security,
+            sni=obj.v2ray_sni,
+            fingerprint=obj.v2ray_fingerprint,
+        ),
         status=obj.status,
         is_active=obj.is_active,
         last_health_check_at=obj.last_health_check_at,
@@ -76,6 +89,16 @@ def apply_domain_to_orm(server: Server, obj: ServerORM) -> None:
     obj.vpn_host = server.openvpn.vpn_host
     obj.vpn_port = server.openvpn.vpn_port
     obj.vpn_proto = server.openvpn.vpn_proto
+    obj.v2ray_enabled = server.v2ray.enabled
+    obj.v2ray_node_api_secret = server.v2ray.node_api_secret
+    obj.v2ray_node_api_port = server.v2ray.node_api_port
+    obj.v2ray_vpn_host = server.v2ray.vpn_host
+    obj.v2ray_vpn_port = server.v2ray.vpn_port
+    obj.v2ray_ws_path = server.v2ray.ws_path
+    obj.v2ray_network = server.v2ray.network
+    obj.v2ray_security = server.v2ray.security
+    obj.v2ray_sni = server.v2ray.sni
+    obj.v2ray_fingerprint = server.v2ray.fingerprint
     obj.status = server.status
     obj.is_active = server.is_active
     obj.last_health_check_at = server.last_health_check_at

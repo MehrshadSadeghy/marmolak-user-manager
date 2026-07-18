@@ -1,4 +1,4 @@
-import uuid
+import secrets
 from datetime import UTC, datetime, timedelta
 
 from vpn_core.subscription_domain.domain.commands import (
@@ -36,8 +36,22 @@ class SubscriptionService:
             existing.chat_id = user.chat_id
             existing.username = user.username
             updated = await self._repository.update_user(existing)
-            return updated or existing
-        return await self._repository.create_user(user)
+            return await self.ensure_subscription_token(updated or existing)
+        created = await self._repository.create_user(
+            user.model_copy(update={"subscription_token": self._generate_subscription_token()})
+        )
+        return created
+
+    async def ensure_subscription_token(self, user: User) -> User:
+        if user.subscription_token or user.id is None:
+            return user
+        user.subscription_token = self._generate_subscription_token()
+        updated = await self._repository.update_user(user)
+        return updated or user
+
+    @staticmethod
+    def _generate_subscription_token() -> str:
+        return secrets.token_urlsafe(24)
 
     async def get_user(self, query: GetUserQuery) -> User | None:
         return await self._repository.get_user(query)

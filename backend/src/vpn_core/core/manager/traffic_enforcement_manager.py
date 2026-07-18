@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_INTERVAL_SECONDS = 3600
+DEFAULT_INTERVAL_SECONDS = 60
 
 
 class TrafficEnforcementManager(Manager):
@@ -48,9 +48,10 @@ class TrafficEnforcementManager(Manager):
             service = self._container.build_openvpn_traffic_enforcement_service(session)
             summary = await service.sync_and_enforce()
             LOGGER.info(
-                "Traffic enforcement cycle complete: checked=%s bytes=%s exceeded=%s revoked=%s errors=%s",
+                "Traffic enforcement cycle complete: checked=%s bytes=%s disconnects=%s exceeded=%s revoked=%s errors=%s",
                 summary.subscriptions_checked,
                 summary.bytes_accounted,
+                summary.disconnect_events_accounted,
                 summary.subscriptions_exceeded,
                 summary.configs_revoked,
                 len(summary.errors),

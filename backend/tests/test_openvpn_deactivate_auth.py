@@ -9,6 +9,7 @@ from vpn_core.openvpn_sync.domain.openvpn_client_credential import (
     OpenVpnClientCredential,
     OpenVpnConfigStatus,
 )
+from vpn_core.openvpn_sync.domain.traffic_snapshot import OpenVpnTrafficSnapshot
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
     OpenVpnTrafficEnforcementService,
@@ -212,7 +213,10 @@ async def test_traffic_enforcement_quota_revokes_dual_auth_via_deactivate():
     credential_repository.revoke.return_value = credential
 
     openvpn_client = AsyncMock()
-    openvpn_client.fetch_client_traffic.return_value = {"0123456789": 1_500}
+    openvpn_client.fetch_client_traffic.return_value = OpenVpnTrafficSnapshot(
+        live={"0123456789": 1_500}
+    )
+    openvpn_client.consume_disconnect_traffic = AsyncMock()
 
     provisioning_service = _build_provisioning_service(
         openvpn_client=openvpn_client,

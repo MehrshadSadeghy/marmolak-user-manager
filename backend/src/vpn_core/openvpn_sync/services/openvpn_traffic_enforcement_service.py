@@ -24,6 +24,7 @@ class TrafficEnforcementSummary:
     bytes_accounted: int = 0
     subscriptions_exceeded: int = 0
     configs_revoked: int = 0
+    disconnect_events_accounted: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -63,6 +64,7 @@ class OpenVpnTrafficEnforcementService:
         subscription_deltas: dict[int, int] = defaultdict(int)
         credential_updates: list[tuple[int, int]] = []
         subscriptions_seen: set[int] = set()
+        consumed_disconnects: dict[int, list[str]] = defaultdict(list)
 
         for server_id, server_credentials in by_server.items():
             server = server_map.get(server_id)
@@ -71,7 +73,7 @@ class OpenVpnTrafficEnforcementService:
                 continue
 
             try:
-                traffic_map = await self._client.fetch_client_traffic(server)
+                snapshot = await self._client.fetch_client_traffic(server)
             except Exception as exc:
                 LOGGER.exception("Traffic sync failed for server %s", server_id)
                 summary.errors.append(f"Server {server_id}: {exc}")
@@ -90,10 +92,30 @@ class OpenVpnTrafficEnforcementService:
                     continue
 
                 subscriptions_seen.add(subscription.id)
-                current_bytes = traffic_map.get(credential.common_name, 0)
+                common_name = credential.common_name
+
+                pending_total = snapshot.disconnect.get(common_name)
+                if pending_total is not None:
+                    delta = compute_traffic_delta(
+                        credential.last_status_bytes,
+                        pending_total,
+                    )
+                    if delta > 0:
+                        subscription_deltas[credential.subscription_id] += delta
+                        summary.bytes_accounted += delta
+                    credential_updates.append((credential.id, 0))
+                    consumed_disconnects[server_id].append(common_name)
+                    summary.disconnect_events_accounted += 1
+                    continue
+
+                current_bytes = snapshot.live.get(common_name, 0)
+                if current_bytes <= 0:
+                    continue
+
                 delta = compute_traffic_delta(credential.last_status_bytes, current_bytes)
                 if delta > 0:
                     subscription_deltas[credential.subscription_id] += delta
+                    summary.bytes_accounted += delta
                 credential_updates.append((credential.id, current_bytes))
 
         for subscription_id, delta in subscription_deltas.items():
@@ -105,7 +127,6 @@ class OpenVpnTrafficEnforcementService:
             if subscription.expire_at <= datetime.now(UTC):
                 continue
             subscription.traffic_used_bytes += delta
-            summary.bytes_accounted += delta
             await self._subscription_repository.update_subscription(subscription)
 
         for credential_id, current_bytes in credential_updates:
@@ -113,6 +134,20 @@ class OpenVpnTrafficEnforcementService:
                 credential_id,
                 current_bytes,
             )
+
+        for server_id, common_names in consumed_disconnects.items():
+            server = server_map.get(server_id)
+            if not server:
+                continue
+            try:
+                await self._client.consume_disconnect_traffic(server, common_names)
+            except Exception as exc:
+                LOGGER.warning(
+                    "Failed to consume disconnect traffic for server %s: %s",
+                    server_id,
+                    exc,
+                )
+                summary.errors.append(f"Server {server_id} disconnect consume: {exc}")
 
         for subscription_id in subscriptions_seen:
             subscription = await self._subscription_repository.get_subscription(

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from vpn_core.server_management_domain.domain.capacity import ServerCapacity
 from vpn_core.server_management_domain.domain.connection_info import ConnectionInfo
 from vpn_core.server_management_domain.domain.openvpn_settings import OpenVpnSettings
+from vpn_core.server_management_domain.domain.v2ray_settings import V2RaySettings
 from vpn_core.server_management_domain.domain.resource_monitoring import ResourceMonitoring
 
 
@@ -37,6 +38,7 @@ class Server(BaseModel):
 
     xray_inbound_tag: str | None = Field(default=None, max_length=64)
     openvpn: OpenVpnSettings = Field(default_factory=OpenVpnSettings)
+    v2ray: V2RaySettings = Field(default_factory=V2RaySettings)
 
     status: ServerStatus = ServerStatus.offline
     is_active: bool = True

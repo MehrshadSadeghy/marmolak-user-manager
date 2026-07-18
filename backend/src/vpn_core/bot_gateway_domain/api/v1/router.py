@@ -8,10 +8,17 @@ from vpn_core.bot_gateway_domain.api.v1.dto import (
     AdminPaymentReviewDTO,
     AdminOpenVpnServerListResponseDTO,
     AdminOpenVpnServerSummaryDTO,
+    AdminV2RayServerListResponseDTO,
+    AdminV2RayServerSummaryDTO,
     OpenVpnServerListResponseDTO,
     OpenVpnServerSummaryDTO,
+    V2RayServerListResponseDTO,
+    V2RayServerSummaryDTO,
     ApplyOpenVpnEndpointDTO,
     ApplyOpenVpnEndpointResponseDTO,
+    ApplyV2RayInboundConfigResponseDTO,
+    PatchV2RayInboundConfigDTO,
+    V2RayInboundConfigResponseDTO,
     ConfigTrafficLookupDTO,
     ConfigTrafficStatusDTO,
     InitiatePaymentDTO,
@@ -40,6 +47,7 @@ from vpn_core.bot_gateway_domain.api.v1.dto import (
     UserServicesResponseDTO,
     UserAccessStatusDTO,
     WalletResponseDTO,
+    ClientSubscriptionUrlResponseDTO,
 )
 from vpn_core.bot_gateway_domain.service import BotGatewayService
 from vpn_core.common.auth.bot_api_key import verify_admin_telegram_id, verify_bot_api_key
@@ -233,6 +241,12 @@ async def list_user_services(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     summaries = await service.list_user_services(user.id)
+    subscription_url = None
+    if any(item.subscription.service_type == "v2ray" and item.is_active for item in summaries):
+        try:
+            subscription_url = await service.get_client_subscription_url(user.id)
+        except HTTPException:
+            subscription_url = None
     items = []
     for item in summaries:
         items.append(
@@ -252,7 +266,22 @@ async def list_user_services(
                 "password_config_ids": item.password_config_ids,
             }
         )
-    return UserServicesResponseDTO(services=items)
+    return UserServicesResponseDTO(services=items, subscription_url=subscription_url)
+
+
+@router.get(
+    "/users/{telegram_id}/subscription-url",
+    response_model=ClientSubscriptionUrlResponseDTO,
+)
+async def get_client_subscription_url(
+    telegram_id: Annotated[str, Path()],
+    service: BotGatewayServiceDep,
+) -> ClientSubscriptionUrlResponseDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    subscription_url = await service.get_client_subscription_url(user.id)
+    return ClientSubscriptionUrlResponseDTO(subscription_url=subscription_url)
 
 
 @router.get(
@@ -540,12 +569,67 @@ async def list_openvpn_servers_for_purchase(
     )
 
 
+def _v2ray_server_summary_dto(item: dict) -> V2RayServerSummaryDTO:
+    server = item["server"]
+    return V2RayServerSummaryDTO(
+        id=server.id,
+        name=server.name,
+        vpn_host=server.v2ray.vpn_host or server.connection.host,
+        vpn_port=server.v2ray.vpn_port,
+        ws_path=server.v2ray.ws_path,
+        network=server.v2ray.network,
+        security=server.v2ray.security,
+        status=server.status.value,
+        max_users=item["max_users"],
+        current_users=item["current_users"],
+        is_full=item["is_full"],
+        remaining_slots=item["remaining_slots"],
+    )
+
+
+@router.get("/v2ray/servers", response_model=V2RayServerListResponseDTO)
+async def list_v2ray_servers_for_purchase(
+    service: BotGatewayServiceDep,
+) -> V2RayServerListResponseDTO:
+    servers = await service.list_v2ray_servers()
+    return V2RayServerListResponseDTO(
+        servers=[_v2ray_server_summary_dto(item) for item in servers]
+    )
+
+
+@router.get(
+    "/users/{telegram_id}/v2ray/configs/{config_id}/delivery",
+    response_model=ServiceDeliveryDTO,
+)
+async def get_v2ray_config_delivery(
+    telegram_id: Annotated[str, Path()],
+    config_id: Annotated[str, Path()],
+    service: BotGatewayServiceDep,
+) -> ServiceDeliveryDTO:
+    user = await service.get_user_by_telegram(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    delivery = await service.get_v2ray_config_delivery(user.id, config_id)
+    return _service_delivery_dto(delivery)
+
+
 @admin_router.get("/servers/openvpn", response_model=AdminOpenVpnServerListResponseDTO)
 async def list_openvpn_servers(service: BotGatewayServiceDep) -> AdminOpenVpnServerListResponseDTO:
     servers = await service.list_openvpn_servers()
     return AdminOpenVpnServerListResponseDTO(
         servers=[
             AdminOpenVpnServerSummaryDTO(**_openvpn_server_summary_dto(item).model_dump())
+            for item in servers
+        ]
+    )
+
+
+@admin_router.get("/servers/v2ray", response_model=AdminV2RayServerListResponseDTO)
+async def list_v2ray_servers_admin(service: BotGatewayServiceDep) -> AdminV2RayServerListResponseDTO:
+    servers = await service.list_v2ray_servers()
+    return AdminV2RayServerListResponseDTO(
+        servers=[
+            AdminV2RayServerSummaryDTO(**_v2ray_server_summary_dto(item).model_dump())
             for item in servers
         ]
     )
@@ -581,6 +665,79 @@ async def apply_openvpn_endpoint(
         server_conf_updated=result.get("server_conf_updated", False),
         firewall_rule_added=result.get("firewall_rule_added", False),
         env_file_updated=result.get("env_file_updated", False),
+        message=message,
+    )
+
+
+def _v2ray_inbound_config_dto(data: dict) -> V2RayInboundConfigDTO:
+    return V2RayInboundConfigDTO(
+        inbound_tag=data["inbound_tag"],
+        listen=data["listen"],
+        port=data["port"],
+        protocol=data["protocol"],
+        network=data["network"],
+        security=data["security"],
+        server_host=data["server_host"],
+        ws_path=data.get("ws_path"),
+        grpc_service_name=data.get("grpc_service_name"),
+        tcp_header_type=data.get("tcp_header_type"),
+        sni=data.get("sni"),
+        fingerprint=data.get("fingerprint"),
+        enable_udp=data.get("enable_udp", False),
+        shadowsocks_method=data.get("shadowsocks_method", "aes-256-gcm"),
+    )
+
+
+@admin_router.get(
+    "/servers/{server_id}/v2ray/inbound-config",
+    response_model=V2RayInboundConfigResponseDTO,
+)
+async def get_v2ray_inbound_config_admin(
+    server_id: Annotated[int, Path()],
+    service: BotGatewayServiceDep,
+) -> V2RayInboundConfigResponseDTO:
+    result = await service.get_v2ray_inbound_config(server_id)
+    return V2RayInboundConfigResponseDTO(
+        server_id=result["server_id"],
+        server_name=result["server_name"],
+        **_v2ray_inbound_config_dto(result).model_dump(),
+    )
+
+
+@admin_router.patch(
+    "/servers/{server_id}/v2ray/inbound-config",
+    response_model=ApplyV2RayInboundConfigResponseDTO,
+)
+async def patch_v2ray_inbound_config_admin(
+    server_id: Annotated[int, Path()],
+    body: PatchV2RayInboundConfigDTO,
+    service: BotGatewayServiceDep,
+) -> ApplyV2RayInboundConfigResponseDTO:
+    if not body.model_dump(exclude_unset=True):
+        raise HTTPException(status_code=400, detail="At least one field is required")
+    result = await service.patch_v2ray_inbound_config(
+        server_id,
+        body.model_dump(exclude_unset=True),
+    )
+    previous = result.get("previous")
+    message = (
+        f"V2Ray inbound updated to {result.get('protocol')} "
+        f"{result.get('network')}+{result.get('security')} on port {result.get('port')}."
+    )
+    return ApplyV2RayInboundConfigResponseDTO(
+        server_id=result["server_id"],
+        server_name=result["server_name"],
+        inbound_tag=result.get("inbound_tag", ""),
+        listen=result.get("listen", ""),
+        port=int(result.get("port") or 0),
+        protocol=str(result.get("protocol") or ""),
+        network=str(result.get("network") or ""),
+        security=str(result.get("security") or ""),
+        server_host=str(result.get("server_host") or ""),
+        xray_config_updated=bool(result.get("xray_config_updated")),
+        env_file_updated=bool(result.get("env_file_updated")),
+        xray_reloaded=bool(result.get("xray_reloaded")),
+        previous=_v2ray_inbound_config_dto(previous) if previous else None,
         message=message,
     )
 

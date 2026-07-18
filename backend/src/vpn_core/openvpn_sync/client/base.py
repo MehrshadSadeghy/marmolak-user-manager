@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 from vpn_core.openvpn_sync.domain.openvpn_user import OpenVpnUser
+from vpn_core.openvpn_sync.domain.traffic_snapshot import OpenVpnTrafficSnapshot
 from vpn_core.server_management_domain.domain.server import Server
 
 
@@ -48,6 +49,11 @@ class OpenVpnClient(ABC):
         pass
 
     @abstractmethod
-    async def fetch_client_traffic(self, server: Server) -> dict[str, int]:
-        """Return current session bytes (received + sent) keyed by common_name."""
+    async def fetch_client_traffic(self, server: Server) -> OpenVpnTrafficSnapshot:
+        """Return live session bytes and pending disconnect totals keyed by common_name."""
+        pass
+
+    @abstractmethod
+    async def consume_disconnect_traffic(self, server: Server, common_names: list[str]) -> None:
+        """Acknowledge processed disconnect session counters on the node."""
         pass

@@ -5,6 +5,7 @@ from vpn_core.telegram_bot.handlers import (
     admin_catalog,
     admin_servers,
     admin_users,
+    admin_v2ray_config,
     config_traffic,
     menu,
     pasarguard_panel,
@@ -29,3 +30,4 @@ def register_handlers(dispatcher: Dispatcher) -> None:
     dispatcher.include_router(admin_users.router)
     dispatcher.include_router(admin_catalog.router)
     dispatcher.include_router(admin_servers.router)
+    dispatcher.include_router(admin_v2ray_config.router)

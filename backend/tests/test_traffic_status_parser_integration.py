@@ -7,6 +7,7 @@ from vpn_core.openvpn_sync.domain.openvpn_client_credential import (
     OpenVpnClientCredential,
     OpenVpnConfigStatus,
 )
+from vpn_core.openvpn_sync.domain.traffic_snapshot import OpenVpnTrafficSnapshot
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
     OpenVpnTrafficEnforcementService,
 )
@@ -69,7 +70,10 @@ async def test_traffic_enforcement_updates_subscription_from_node_readings():
     server_service = AsyncMock()
     server_service.list_servers.return_value = [server]
     openvpn_client = AsyncMock()
-    openvpn_client.fetch_client_traffic.return_value = {"9149049423": 1_286_693}
+    openvpn_client.fetch_client_traffic.return_value = OpenVpnTrafficSnapshot(
+        live={"9149049423": 1_286_693}
+    )
+    openvpn_client.consume_disconnect_traffic = AsyncMock()
 
     service = OpenVpnTrafficEnforcementService(
         subscription_repository=subscription_repository,

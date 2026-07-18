@@ -8,6 +8,7 @@ from vpn_core.server_management_domain.domain.commands import (
 from vpn_core.server_management_domain.domain.connection_info import ConnectionInfo
 from vpn_core.server_management_domain.domain.queries import GetServerQuery, ListServersQuery
 from vpn_core.server_management_domain.domain.openvpn_settings import OpenVpnSettings
+from vpn_core.server_management_domain.domain.v2ray_settings import V2RaySettings
 from vpn_core.server_management_domain.domain.resource_monitoring import ResourceMonitoring
 from vpn_core.server_management_domain.domain.server import Server, ServerStatus
 
@@ -55,6 +56,33 @@ class OpenVpnSettingsDTO(BaseModel):
         )
 
 
+class V2RaySettingsDTO(BaseModel):
+    enabled: bool = False
+    node_api_secret: str | None = Field(default=None, max_length=256)
+    node_api_port: int = Field(default=8092, ge=1, le=65535)
+    vpn_host: str | None = Field(default=None, max_length=255)
+    vpn_port: int = Field(default=443, ge=1, le=65535)
+    ws_path: str = Field(default="/v2ray", max_length=255)
+    network: str = Field(default="ws", max_length=16)
+    security: str = Field(default="tls", max_length=16)
+    sni: str | None = Field(default=None, max_length=255)
+    fingerprint: str | None = Field(default="chrome", max_length=32)
+
+    def to_domain(self) -> V2RaySettings:
+        return V2RaySettings(
+            enabled=self.enabled,
+            node_api_secret=self.node_api_secret,
+            node_api_port=self.node_api_port,
+            vpn_host=self.vpn_host,
+            vpn_port=self.vpn_port,
+            ws_path=self.ws_path,
+            network=self.network,
+            security=self.security,
+            sni=self.sni,
+            fingerprint=self.fingerprint,
+        )
+
+
 class ResourceMonitoringDTO(BaseModel):
     cpu_usage: float = Field(default=0.0, ge=0.0, le=100.0)
     ram_usage: float = Field(default=0.0, ge=0.0, le=100.0)
@@ -88,6 +116,7 @@ class CreateServerDTO(BaseModel):
 
     xray_inbound_tag: str | None = Field(default=None, max_length=64)
     openvpn: OpenVpnSettingsDTO = Field(default_factory=OpenVpnSettingsDTO)
+    v2ray: V2RaySettingsDTO = Field(default_factory=V2RaySettingsDTO)
     status: ServerStatus = ServerStatus.offline
     is_active: bool = True
     notes: str | None = Field(default=None, max_length=1024)
@@ -106,6 +135,7 @@ class CreateServerDTO(BaseModel):
             monitoring=self.monitoring.to_domain(),
             xray_inbound_tag=self.xray_inbound_tag,
             openvpn=self.openvpn.to_domain(),
+            v2ray=self.v2ray.to_domain(),
             status=self.status,
             is_active=self.is_active,
             notes=self.notes,
@@ -147,6 +177,7 @@ class UpdateServerDTO(BaseModel):
             monitoring=self.monitoring.to_domain(),
             xray_inbound_tag=self.xray_inbound_tag,
             openvpn=self.openvpn.to_domain(),
+            v2ray=self.v2ray.to_domain(),
             status=self.status,
             is_active=self.is_active,
             notes=self.notes,
@@ -197,6 +228,7 @@ class ListServersQueryDTO(BaseModel):
     is_active: bool | None = None
     status: ServerStatus | None = None
     openvpn_enabled: bool | None = None
+    v2ray_enabled: bool | None = None
 
     def to_domain(self) -> ListServersQuery:
         return ListServersQuery(
@@ -204,4 +236,5 @@ class ListServersQueryDTO(BaseModel):
             is_active=self.is_active,
             status=self.status,
             openvpn_enabled=self.openvpn_enabled,
+            v2ray_enabled=self.v2ray_enabled,
         )

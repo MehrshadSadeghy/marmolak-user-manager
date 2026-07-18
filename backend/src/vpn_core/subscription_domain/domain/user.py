@@ -16,4 +16,5 @@ class User(BaseModel):
     blocked_reason: str | None = None
     blocked_by_admin_telegram_id: str | None = None
     is_collaborator: bool = False
+    subscription_token: str | None = None
     created_at: datetime | None = None

@@ -8,6 +8,11 @@ from vpn_core.billing_domain.service import BillingService
 from vpn_core.bot_gateway_domain.api.v1.router import admin_router as bot_admin_router
 from vpn_core.bot_gateway_domain.api.v1.router import router as bot_router
 from vpn_core.bot_gateway_domain.service import BotGatewayService
+from vpn_core.client_subscription_domain.api.v1.router import router as client_subscription_router
+from vpn_core.client_subscription_domain.service import (
+    ClientSubscriptionConfig,
+    ClientSubscriptionService,
+)
 from vpn_core.billing_domain.api.v1.router import router as billing_admin_router
 from vpn_core.commerce_domain.api.v1.router import router as commerce_admin_router
 from vpn_core.commerce_domain.repository.sqlalchemy_repository import CommerceDBRepository
@@ -21,6 +26,7 @@ from vpn_core.core.manager.expiry_enforcement_manager import ExpiryEnforcementMa
 from vpn_core.core.manager.traffic_enforcement_manager import TrafficEnforcementManager
 from vpn_core.core.manager.db_manager import PostgresManager
 from vpn_core.openvpn_sync.api.v1.router import router as openvpn_router
+from vpn_core.v2ray_sync.api.v1.router import router as v2ray_router
 from vpn_core.openvpn_sync.repository.sqlalchemy_repository import (
     OpenVpnCredentialDBRepository,
     OpenVpnTrafficDBRepository,
@@ -40,6 +46,10 @@ from vpn_core.openvpn_sync.services.subscription_expiry_enforcement_service impo
     SubscriptionExpiryEnforcementService,
 )
 from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTrafficService
+from vpn_core.v2ray_sync.repository.sqlalchemy_repository import V2RayCredentialDBRepository
+from vpn_core.v2ray_sync.services.v2ray_capacity_service import V2RayCapacityService
+from vpn_core.v2ray_sync.services.v2ray_inbound_config_service import V2RayInboundConfigService
+from vpn_core.v2ray_sync.services.v2ray_provisioning_service import V2RayProvisioningService
 from vpn_core.pasarguard_panel_domain.repository.sqlalchemy_repository import PasarguardPanelLinkDBRepository
 from vpn_core.pasarguard_panel_domain.service import PasarguardPanelService
 from vpn_core.server_management_domain.api.v1.router import router as server_router
@@ -61,6 +71,7 @@ from vpn_core.telegram_bot.manager import TelegramBotManager
 import vpn_core.billing_domain.db_model  # noqa: F401
 import vpn_core.commerce_domain.db_model  # noqa: F401
 import vpn_core.openvpn_sync.db_model  # noqa: F401
+import vpn_core.v2ray_sync.db_model  # noqa: F401
 import vpn_core.pasarguard_panel_domain.db_model  # noqa: F401
 import vpn_core.server_management_domain.db_model  # noqa: F401
 import vpn_core.subscription_domain.db_model  # noqa: F401
@@ -90,11 +101,13 @@ class AppContainer:
             api_config=self.get_api_config(),
             container=self,
             routers=[
+                client_subscription_router,
                 strategy_router,
                 subscription_router,
                 subscription_admin_router,
                 server_router,
                 openvpn_router,
+                v2ray_router,
                 bot_router,
                 bot_admin_router,
                 user_admin_router,
@@ -174,6 +187,20 @@ class AppContainer:
             server_service=self.build_server_service(session),
         )
 
+    def build_v2ray_capacity_service(self, session: Session) -> V2RayCapacityService:
+        return V2RayCapacityService(
+            credential_repository=V2RayCredentialDBRepository(session=session),
+            server_service=self.build_server_service(session),
+        )
+
+    def build_v2ray_provisioning_service(self, session: Session) -> V2RayProvisioningService:
+        return V2RayProvisioningService(
+            server_service=self.build_server_service(session),
+            subscription_repository=SubscriptionDBRepository(session=session),
+            credential_repository=V2RayCredentialDBRepository(session=session),
+            capacity_service=self.build_v2ray_capacity_service(session),
+        )
+
     def build_openvpn_provisioning_service(self, session: Session) -> OpenVpnProvisioningService:
         return OpenVpnProvisioningService(
             server_service=self.build_server_service(session),
@@ -193,6 +220,9 @@ class AppContainer:
 
     def build_openvpn_endpoint_service(self, session: Session) -> OpenVpnEndpointService:
         return OpenVpnEndpointService(server_service=self.build_server_service(session))
+
+    def build_v2ray_inbound_config_service(self, session: Session) -> V2RayInboundConfigService:
+        return V2RayInboundConfigService(server_service=self.build_server_service(session))
 
     def build_user_admin_service(self, session: Session) -> UserAdminService:
         return UserAdminService(
@@ -218,6 +248,7 @@ class AppContainer:
         return SubscriptionExpiryEnforcementService(
             subscription_repository=SubscriptionDBRepository(session=session),
             provisioning_service=self.build_openvpn_provisioning_service(session),
+            v2ray_provisioning_service=self.build_v2ray_provisioning_service(session),
         )
 
     def build_openvpn_delivery_service(self, session: Session) -> OpenVpnCredentialDeliveryService:
@@ -231,14 +262,25 @@ class AppContainer:
             billing_service=self.build_billing_service(session),
             commerce_service=self.build_commerce_service(session),
             openvpn_service=self.build_openvpn_provisioning_service(session),
+            v2ray_service=self.build_v2ray_provisioning_service(session),
             openvpn_endpoint_service=self.build_openvpn_endpoint_service(session),
             openvpn_delivery_service=self.build_openvpn_delivery_service(session),
             server_service=self.build_server_service(session),
             capacity_service=self.build_server_capacity_service(session),
+            v2ray_capacity_service=self.build_v2ray_capacity_service(session),
             user_admin_service=self.build_user_admin_service(session),
             traffic_enforcement_service=self.build_openvpn_traffic_enforcement_service(session),
             expiry_enforcement_service=self.build_subscription_expiry_enforcement_service(session),
             subscription_base_url=self.get_subscription_base_url(),
+            client_subscription_service=self.build_client_subscription_service(session),
+            v2ray_inbound_config_service=self.build_v2ray_inbound_config_service(session),
+        )
+
+    def build_client_subscription_service(self, session: Session) -> ClientSubscriptionService:
+        return ClientSubscriptionService(
+            subscription_service=self.build_subscription_service(session),
+            v2ray_service=self.build_v2ray_provisioning_service(session),
+            config=ClientSubscriptionConfig.from_env(self.get_subscription_base_url()),
         )
 
     def build_pasarguard_panel_service(self, session: Session) -> PasarguardPanelService:

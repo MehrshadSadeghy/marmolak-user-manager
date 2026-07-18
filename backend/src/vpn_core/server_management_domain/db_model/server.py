@@ -43,6 +43,17 @@ class ServerORM(Base):
     vpn_port: Mapped[int] = mapped_column(Integer, default=1433, nullable=False)
     vpn_proto: Mapped[str] = mapped_column(String(16), default="udp", nullable=False)
 
+    v2ray_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    v2ray_node_api_secret: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    v2ray_node_api_port: Mapped[int] = mapped_column(Integer, default=8092, nullable=False)
+    v2ray_vpn_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    v2ray_vpn_port: Mapped[int] = mapped_column(Integer, default=443, nullable=False)
+    v2ray_ws_path: Mapped[str] = mapped_column(String(255), default="/v2ray", nullable=False)
+    v2ray_network: Mapped[str] = mapped_column(String(16), default="ws", nullable=False)
+    v2ray_security: Mapped[str] = mapped_column(String(16), default="tls", nullable=False)
+    v2ray_sni: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    v2ray_fingerprint: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     status: Mapped[ServerStatus] = mapped_column(
         Enum(ServerStatus, name="server_status"),
         default=ServerStatus.offline,

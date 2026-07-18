@@ -49,6 +49,33 @@ async def test_enforce_expires_subscription_and_revokes_configs():
 
 
 @pytest.mark.asyncio
+async def test_enforce_expires_v2ray_subscription_and_revokes_configs():
+    subscription = _subscription()
+    subscription.service_type = "v2ray"
+    subscription_repository = AsyncMock()
+    subscription_repository.list_expired_active_subscriptions.return_value = [subscription]
+    subscription_repository.update_subscription.side_effect = lambda sub: sub
+
+    openvpn_service = AsyncMock()
+    v2ray_service = AsyncMock()
+    v2ray_service.deactivate.return_value = 1
+
+    service = SubscriptionExpiryEnforcementService(
+        subscription_repository=subscription_repository,
+        provisioning_service=openvpn_service,
+        v2ray_provisioning_service=v2ray_service,
+    )
+
+    summary = await service.enforce()
+
+    assert summary.subscriptions_checked == 1
+    assert summary.subscriptions_expired == 1
+    assert summary.configs_revoked == 1
+    v2ray_service.deactivate.assert_awaited_once()
+    openvpn_service.deactivate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_enforce_skips_when_no_expired_subscriptions():
     subscription_repository = AsyncMock()
     subscription_repository.list_expired_active_subscriptions.return_value = []

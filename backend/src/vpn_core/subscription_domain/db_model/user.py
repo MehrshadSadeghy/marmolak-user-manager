@@ -21,6 +21,7 @@ class User(Base):
     blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     blocked_by_admin_telegram_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_collaborator: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    subscription_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

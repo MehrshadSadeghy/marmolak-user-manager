@@ -16,5 +16,8 @@ class AdminFlow(StatesGroup):
     create_pm_instructions = State()
     create_pm_card_numbers = State()
     openvpn_endpoint_port = State()
+    v2ray_inbound_port = State()
+    v2ray_inbound_ws_path = State()
+    v2ray_inbound_server_host = State()
     waiting_user_search = State()
     waiting_user_page_jump = State()

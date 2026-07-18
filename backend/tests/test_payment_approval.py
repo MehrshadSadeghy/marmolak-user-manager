@@ -48,14 +48,18 @@ def _service(**overrides) -> BotGatewayService:
         billing_service=billing_service,
         commerce_service=commerce_service,
         openvpn_service=openvpn_service,
+        v2ray_service=AsyncMock(),
         openvpn_endpoint_service=openvpn_endpoint_service,
         openvpn_delivery_service=AsyncMock(),
         server_service=server_service,
         capacity_service=capacity_service,
+        v2ray_capacity_service=AsyncMock(),
         user_admin_service=user_admin_service,
         traffic_enforcement_service=traffic_enforcement_service,
         expiry_enforcement_service=expiry_enforcement_service,
         subscription_base_url="https://example.com",
+        client_subscription_service=AsyncMock(),
+        v2ray_inbound_config_service=AsyncMock(),
     )
 
     for key, value in overrides.items():

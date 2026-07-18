@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class GetUserQuery(BaseModel):
     user_id: int | None = None
     telegram_id: str | None = None
+    subscription_token: str | None = None
 
 
 class GetPlanQuery(BaseModel):

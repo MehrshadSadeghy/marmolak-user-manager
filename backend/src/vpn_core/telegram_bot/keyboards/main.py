@@ -95,6 +95,34 @@ def openvpn_servers_purchase_keyboard(servers: list[dict]) -> InlineKeyboardMark
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def v2ray_servers_purchase_keyboard(servers: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for server in servers:
+        capacity = f"{server['current_users']}/{server['max_users']}"
+        if server.get("is_full"):
+            label = f"🔴 {server['name']} — پر ({capacity})"
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=label,
+                        callback_data=f"buy:v2ray:server-full:{server['id']}",
+                    )
+                ]
+            )
+        else:
+            label = f"🟢 {server['name']} — {capacity} ظرفیت"
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=label,
+                        callback_data=f"buy:v2ray:server:{server['id']}",
+                    )
+                ]
+            )
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:buy")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def payment_methods_keyboard(methods: list[dict], prefix: str) -> InlineKeyboardMarkup:
     rows = [
         [
@@ -109,7 +137,11 @@ def payment_methods_keyboard(methods: list[dict], prefix: str) -> InlineKeyboard
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def user_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
+def user_services_keyboard(
+    services: list[dict],
+    *,
+    subscription_url: str | None = None,
+) -> InlineKeyboardMarkup:
     rows = []
     for item in services:
         subscription_id = item["subscription_id"]
@@ -168,6 +200,36 @@ def user_services_keyboard(services: list[dict]) -> InlineKeyboardMarkup:
                         )
                     ]
                 )
+        elif item.get("service_type") == "v2ray":
+            config_ids = item.get("config_ids") or []
+            if config_ids:
+                for config_id in config_ids:
+                    rows.append(
+                        [
+                            InlineKeyboardButton(
+                                text=f"🔗 دریافت لینک V2Ray — {config_id}",
+                                callback_data=f"download:v2ray:{config_id}",
+                            )
+                        ]
+                    )
+            else:
+                rows.append(
+                    [
+                        InlineKeyboardButton(
+                            text=f"🔗 دریافت لینک V2Ray — #{subscription_id}",
+                            callback_data=f"download:sub:{subscription_id}",
+                        )
+                    ]
+                )
+    if subscription_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="📲 مدیریت اشتراک V2Ray",
+                    callback_data="subscription:manage",
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(text="🛒 خرید سرویس جدید", callback_data="menu:buy")])
     rows.append([InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="menu:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -227,6 +289,7 @@ def admin_menu_keyboard(*, pasarguard_webapp_url: str | None = None) -> InlineKe
         [InlineKeyboardButton(text="📊 گزارش مالی", callback_data="admin:report")],
         [InlineKeyboardButton(text="🖥 سرورها و ظرفیت", callback_data="admin:servers")],
         [InlineKeyboardButton(text="🔌 OpenVPN پورت/پروتکل", callback_data="admin:openvpn-endpoint")],
+        [InlineKeyboardButton(text="⚡ V2Ray / Xray تنظیمات", callback_data="admin:v2ray-inbound")],
     ]
     if pasarguard_webapp_url and pasarguard_webapp_url.startswith("https://"):
         rows.append(
@@ -394,6 +457,61 @@ def admin_openvpn_confirm_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="✅ تأیید و اعمال", callback_data="admin:ovpn:confirm"),
                 InlineKeyboardButton(text="❌ لغو", callback_data="admin:ovpn:cancel"),
             ]
+        ]
+    )
+
+
+def admin_v2ray_servers_keyboard(servers: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for server in servers:
+        label = (
+            f"{_server_capacity_label(server)} — "
+            f"{server['network']}/{server['security']}:{server['vpn_port']}"
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=f"admin:v2ray:server:{server['id']}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:admin")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_v2ray_config_keyboard(server_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔁 پروتکل", callback_data=f"admin:v2ray:edit:protocol:{server_id}")],
+            [InlineKeyboardButton(text="🌐 Network", callback_data=f"admin:v2ray:edit:network:{server_id}")],
+            [InlineKeyboardButton(text="🔒 Security", callback_data=f"admin:v2ray:edit:security:{server_id}")],
+            [InlineKeyboardButton(text="🔢 Port", callback_data=f"admin:v2ray:edit:port:{server_id}")],
+            [InlineKeyboardButton(text="📂 WS Path", callback_data=f"admin:v2ray:edit:wspath:{server_id}")],
+            [InlineKeyboardButton(text="🌍 Server Host", callback_data=f"admin:v2ray:edit:host:{server_id}")],
+            [InlineKeyboardButton(text="🔄 بروزرسانی از نود", callback_data=f"admin:v2ray:refresh:{server_id}")],
+            [InlineKeyboardButton(text="◀️ بازگشت", callback_data="admin:v2ray-inbound")],
+        ]
+    )
+
+
+def admin_v2ray_choice_keyboard(server_id: int, field: str, options: list[tuple[str, str]]) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=label, callback_data=f"admin:v2ray:set:{field}:{server_id}:{value}")]
+        for label, value in options
+    ]
+    rows.append(
+        [InlineKeyboardButton(text="◀️ بازگشت", callback_data=f"admin:v2ray:server:{server_id}")]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def user_subscription_manage_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 دریافت لینک اشتراک", callback_data="subscription:url")],
+            [InlineKeyboardButton(text="📖 راهنمای Hiddify/Happ", callback_data="subscription:help")],
+            [InlineKeyboardButton(text="◀️ بازگشت", callback_data="menu:services")],
         ]
     )
 

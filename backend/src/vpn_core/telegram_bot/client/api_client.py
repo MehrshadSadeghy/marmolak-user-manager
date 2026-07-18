@@ -83,6 +83,10 @@ class UserManagerApiClient:
         data = await self._request("GET", "/api/v1/bot/openvpn/servers")
         return data["servers"]
 
+    async def list_v2ray_servers(self) -> list[dict]:
+        data = await self._request("GET", "/api/v1/bot/v2ray/servers")
+        return data["servers"]
+
     async def initiate_payment(self, payload: dict) -> dict:
         return await self._request("POST", "/api/v1/bot/payments/initiate", json=payload)
 
@@ -112,9 +116,11 @@ class UserManagerApiClient:
         data = await self._request("GET", "/api/v1/bot/payment-methods")
         return data["payment_methods"]
 
-    async def list_user_services(self, telegram_id: str) -> list[dict]:
-        data = await self._request("GET", f"/api/v1/bot/users/{telegram_id}/services")
-        return data["services"]
+    async def list_user_services(self, telegram_id: str) -> dict:
+        return await self._request("GET", f"/api/v1/bot/users/{telegram_id}/services")
+
+    async def get_client_subscription_url(self, telegram_id: str) -> dict:
+        return await self._request("GET", f"/api/v1/bot/users/{telegram_id}/subscription-url")
 
     async def get_subscription_delivery(self, telegram_id: str, subscription_id: int) -> dict:
         return await self._request(
@@ -126,6 +132,12 @@ class UserManagerApiClient:
         return await self._request(
             "GET",
             f"/api/v1/bot/users/{telegram_id}/openvpn/configs/{config_id}/delivery",
+        )
+
+    async def get_v2ray_config_delivery(self, telegram_id: str, config_id: str) -> dict:
+        return await self._request(
+            "GET",
+            f"/api/v1/bot/users/{telegram_id}/v2ray/configs/{config_id}/delivery",
         )
 
     async def get_openvpn_credential_view(self, telegram_id: str, config_id: str) -> dict:
@@ -315,6 +327,38 @@ class UserManagerApiClient:
             "POST",
             f"/api/v1/admin/bot/servers/{server_id}/openvpn-endpoint",
             json={"port": port, "proto": proto},
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def list_v2ray_servers_admin(self, admin_telegram_id: str) -> list[dict]:
+        data = await self._request(
+            "GET",
+            "/api/v1/admin/bot/servers/v2ray",
+            admin_telegram_id=admin_telegram_id,
+        )
+        return data["servers"]
+
+    async def get_v2ray_inbound_config_admin(
+        self,
+        admin_telegram_id: str,
+        server_id: int,
+    ) -> dict:
+        return await self._request(
+            "GET",
+            f"/api/v1/admin/bot/servers/{server_id}/v2ray/inbound-config",
+            admin_telegram_id=admin_telegram_id,
+        )
+
+    async def patch_v2ray_inbound_config_admin(
+        self,
+        admin_telegram_id: str,
+        server_id: int,
+        payload: dict,
+    ) -> dict:
+        return await self._request(
+            "PATCH",
+            f"/api/v1/admin/bot/servers/{server_id}/v2ray/inbound-config",
+            json=payload,
             admin_telegram_id=admin_telegram_id,
         )
 

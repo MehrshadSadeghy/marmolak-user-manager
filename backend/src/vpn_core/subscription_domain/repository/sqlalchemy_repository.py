@@ -29,6 +29,7 @@ class SubscriptionDBRepository(SubscriptionRepository):
             chat_id=user.chat_id,
             username=user.username,
             is_active=user.is_active,
+            subscription_token=user.subscription_token,
         )
         self._session.add(obj)
         self._session.commit()
@@ -42,6 +43,12 @@ class SubscriptionDBRepository(SubscriptionRepository):
             obj = (
                 self._session.query(UserORM)
                 .filter(UserORM.telegram_id == query.telegram_id)
+                .one_or_none()
+            )
+        elif query.subscription_token is not None:
+            obj = (
+                self._session.query(UserORM)
+                .filter(UserORM.subscription_token == query.subscription_token)
                 .one_or_none()
             )
         else:
@@ -62,6 +69,7 @@ class SubscriptionDBRepository(SubscriptionRepository):
         obj.blocked_reason = user.blocked_reason
         obj.blocked_by_admin_telegram_id = user.blocked_by_admin_telegram_id
         obj.is_collaborator = user.is_collaborator
+        obj.subscription_token = user.subscription_token
         self._session.add(obj)
         self._session.commit()
         self._session.refresh(obj)

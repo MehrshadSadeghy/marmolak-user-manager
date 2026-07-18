@@ -10,6 +10,7 @@ from vpn_core.telegram_bot.keyboards.main import (
     payment_methods_keyboard,
     plans_keyboard,
     services_keyboard,
+    v2ray_servers_purchase_keyboard,
 )
 from vpn_core.telegram_bot.messages import format_payment_method_display, format_toman
 
@@ -75,6 +76,32 @@ async def select_service(callback: CallbackQuery, api: UserManagerApiClient) -> 
         await callback.answer("🖥 انتخاب سرور")
         return
 
+    if service_type == "v2ray":
+        servers = await api.list_v2ray_servers()
+        if not servers:
+            await edit_callback_message(message, 
+                "😔 سرور V2Ray فعالی موجود نیست.\n"
+                "📞 با پشتیبانی تماس بگیر.",
+                reply_markup=back_to_menu_keyboard(),
+            )
+        elif all(server.get("is_full") for server in servers):
+            await edit_callback_message(message, 
+                "😔 همه سرورهای V2Ray در حال حاضر پر هستند.\n"
+                "⏳ لطفاً بعداً دوباره تلاش کن یا با پشتیبانی تماس بگیر.",
+                reply_markup=back_to_menu_keyboard(),
+            )
+        else:
+            await edit_callback_message(message, 
+                "🖥 <b>انتخاب سرور V2Ray</b>\n\n"
+                "🟢 سرورهای آزاد قابل خرید هستند.\n"
+                "🔴 سرورهای پر موقتاً غیرفعال‌اند.\n\n"
+                "👇 سرور مورد نظرت را انتخاب کن:",
+                reply_markup=v2ray_servers_purchase_keyboard(servers),
+                parse_mode="HTML",
+            )
+        await callback.answer("🖥 انتخاب سرور")
+        return
+
     plans = await api.list_plans(service_type, telegram_id=tg_id)
     if not plans:
         await edit_callback_message(message, 
@@ -96,6 +123,41 @@ async def select_service(callback: CallbackQuery, api: UserManagerApiClient) -> 
 @router.callback_query(F.data.startswith("buy:server-full:"))
 async def server_full_alert(callback: CallbackQuery) -> None:
     await callback.answer("این سرور پر است. لطفاً سرور دیگری انتخاب کن.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("buy:v2ray:server-full:"))
+async def v2ray_server_full_alert(callback: CallbackQuery) -> None:
+    await callback.answer("این سرور پر است. لطفاً سرور دیگری انتخاب کن.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("buy:v2ray:server:"))
+async def select_v2ray_server(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    server_id = int(callback.data.rsplit(":", 1)[1])
+    tg_id = str(callback.from_user.id)
+    plans = await api.list_plans("v2ray", telegram_id=tg_id)
+    if not plans:
+        await edit_callback_message(message, 
+            "😔 برای V2Ray پلنی تعریف نشده.\n"
+            "📞 با پشتیبانی تماس بگیر.",
+            reply_markup=back_to_menu_keyboard(),
+        )
+    else:
+        await edit_callback_message(message, 
+            "💎 <b>پلن مناسب خودت را انتخاب کن</b>\n\n"
+            "⚡ فعال‌سازی آنی بعد از پرداخت\n"
+            "🎁 هرچه زودتر بخری، زودتر وصل می‌شی!",
+            reply_markup=plans_keyboard(
+                plans,
+                prefix=f"buy:sv:{server_id}",
+                back_callback="service:v2ray",
+            ),
+            parse_mode="HTML",
+        )
+    await callback.answer("💎 انتخاب پلن")
 
 
 @router.callback_query(F.data.startswith("buy:server:"))
@@ -154,7 +216,7 @@ async def _complete_purchase(
         if not delivery:
             await message.answer(
                 "⚠️ سرویس فعال شد اما ارسال خودکار کانفیگ ناموفق بود.\n"
-                "📦 از منوی «سرویس‌های من» می‌توانی فایل .ovpn را دریافت کنی.",
+                "📦 از منوی «سرویس‌های من» می‌توانی کانفیگ را دریافت کنی.",
                 reply_markup=back_to_menu_keyboard(),
                 parse_mode="HTML",
             )

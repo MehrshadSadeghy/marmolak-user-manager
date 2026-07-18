@@ -12,4 +12,4 @@ class ListServersQuery(BaseModel):
     is_active: bool | None = None
     status: ServerStatus | None = None
     openvpn_enabled: bool | None = None
-    openvpn_enabled: bool | None = None
+    v2ray_enabled: bool | None = None

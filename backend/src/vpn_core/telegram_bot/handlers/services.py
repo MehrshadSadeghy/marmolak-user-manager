@@ -17,6 +17,7 @@ from vpn_core.telegram_bot.keyboards.main import (
     plans_keyboard,
     renew_services_keyboard,
     user_services_keyboard,
+    user_subscription_manage_keyboard,
 )
 from vpn_core.telegram_bot.messages import format_payment_method_display, format_toman, status_label_fa
 
@@ -29,7 +30,9 @@ async def menu_services(callback: CallbackQuery, api: UserManagerApiClient) -> N
     if not message:
         await callback.answer()
         return
-    services = await api.list_user_services(str(callback.from_user.id))
+    services_payload = await api.list_user_services(str(callback.from_user.id))
+    services = services_payload.get("services") or []
+    subscription_url = services_payload.get("subscription_url")
     if not services:
         await edit_callback_message(message, 
             "📦 هنوز سرویسی نداری!\n\n"
@@ -51,8 +54,8 @@ async def menu_services(callback: CallbackQuery, api: UserManagerApiClient) -> N
         await edit_callback_message(message, 
             "📦 <b>سرویس‌های من</b>\n\n"
             + "\n\n".join(lines)
-            + "\n\n👇 برای دریافت فایل .ovpn، دکمه مربوطه را بزن:",
-            reply_markup=user_services_keyboard(services),
+            + "\n\n👇 برای دریافت کانفیگ (فایل .ovpn، لینک V2Ray، یا لینک اشتراک Hiddify/Happ)، دکمه مربوطه را بزن:",
+            reply_markup=user_services_keyboard(services, subscription_url=subscription_url),
             parse_mode="HTML",
         )
     await callback.answer("📦 سرویس‌های شما")
@@ -180,6 +183,92 @@ async def finalize_openvpn_auth_migration(callback: CallbackQuery, api: UserMana
     await callback.answer("✅ کانفیگ جدید ارسال شد")
 
 
+@router.callback_query(F.data == "subscription:manage")
+async def manage_client_subscription(callback: CallbackQuery) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    await edit_callback_message(
+        message,
+        "📲 <b>مدیریت اشتراک V2Ray</b>\n\n"
+        "با لینک اشتراک، برنامه‌های Hiddify، Happ، v2rayNG و Streisand "
+        "به‌صورت خودکار کانفیگ‌ها را دریافت و به‌روز می‌کنند.\n\n"
+        "👇 یکی از گزینه‌ها را انتخاب کن:",
+        reply_markup=user_subscription_manage_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "subscription:help")
+async def subscription_help(callback: CallbackQuery) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    await edit_callback_message(
+        message,
+        "📖 <b>راهنمای Hiddify / Happ</b>\n\n"
+        "1️⃣ از منوی «دریافت لینک اشتراک»، URL را کپی کن.\n"
+        "2️⃣ در Hiddify/Happ برو به Add Subscription / افزودن اشتراک.\n"
+        "3️⃣ لینک را Paste کن و ذخیره کن.\n"
+        "4️⃣ برنامه خودکار کانفیگ‌ها را sync می‌کند.\n\n"
+        "💡 اگر پروتکل یا پورت سرور عوض شد، همین لینk را دوباره sync کن.",
+        reply_markup=user_subscription_manage_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "subscription:url")
+async def send_client_subscription_url(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    tg_id = str(callback.from_user.id)
+    try:
+        payload = await api.get_client_subscription_url(tg_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            await callback.answer("❌ لینک اشتراک یافت نشد.", show_alert=True)
+            return
+        raise
+    subscription_url = payload["subscription_url"]
+    await message.answer(
+        "📲 <b>لینک اشتراک V2Ray</b>\n\n"
+        "این لینک را در Hiddify، Happ، v2rayNG یا Streisand به‌عنوان "
+        "<b>Subscription URL</b> اضافه کن.\n"
+        "برنامه به‌صورت خودکار کانفیگ‌ها را دریافت و به‌روز می‌کند.\n\n"
+        f"🔗 <code>{subscription_url}</code>",
+        parse_mode="HTML",
+    )
+    await callback.answer("📲 لینک اشتراک ارسال شد")
+
+
+@router.callback_query(F.data.startswith("download:v2ray:"))
+async def download_v2ray_config_by_id(callback: CallbackQuery, api: UserManagerApiClient) -> None:
+    message = callback.message
+    if not message:
+        await callback.answer()
+        return
+    config_id = callback.data.rsplit(":", 1)[1]
+    tg_id = str(callback.from_user.id)
+    try:
+        delivery = await api.get_v2ray_config_delivery(tg_id, config_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            await callback.answer(
+                "❌ لینک کانفیگ یافت نشد. با پشتیبانی تماس بگیر.",
+                show_alert=True,
+            )
+            return
+        raise
+    await send_openvpn_delivery_to_chat(message.bot, tg_id, delivery, reply_markup=buy_now_keyboard())
+    await callback.answer("🔗 لینک ارسال شد")
+
+
 @router.callback_query(F.data.startswith("download:config:"))
 async def download_config_by_id(callback: CallbackQuery, api: UserManagerApiClient) -> None:
     message = callback.message
@@ -208,7 +297,8 @@ async def menu_renew(callback: CallbackQuery, api: UserManagerApiClient) -> None
     if not message:
         await callback.answer()
         return
-    services = await api.list_user_services(str(callback.from_user.id))
+    services_payload = await api.list_user_services(str(callback.from_user.id))
+    services = services_payload.get("services") or []
     if not services:
         await edit_callback_message(message, 
             "😔 سرویسی برای تمدید نداری.\n\n"
@@ -234,7 +324,8 @@ async def renew_subscription(callback: CallbackQuery, api: UserManagerApiClient)
         return
     subscription_id = int(callback.data.rsplit(":", 1)[1])
     tg_id = str(callback.from_user.id)
-    services = await api.list_user_services(tg_id)
+    services_payload = await api.list_user_services(tg_id)
+    services = services_payload.get("services") or []
     selected = next(s for s in services if s["subscription_id"] == subscription_id)
     if selected["is_active"]:
         await edit_callback_message(message, 

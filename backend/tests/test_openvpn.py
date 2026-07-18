@@ -10,6 +10,7 @@ from vpn_core.openvpn_sync.services.openvpn_traffic_service import OpenVpnTraffi
 from vpn_core.server_management_domain.domain.capacity import ServerCapacity
 from vpn_core.server_management_domain.domain.connection_info import ConnectionInfo
 from vpn_core.server_management_domain.domain.openvpn_settings import OpenVpnSettings
+from vpn_core.server_management_domain.domain.v2ray_settings import V2RaySettings
 from vpn_core.server_management_domain.domain.server import Server
 from vpn_core.subscription_domain.domain.subscription import Subscription, SubscriptionStatus
 
@@ -84,8 +85,13 @@ def test_server_capability_checks():
     v2ray_only = _server(name="V2", xray_tag="inbound-vless")
     openvpn_only = _server(name="openvpn_only", openvpn_enabled=True)
 
-    assert node_api_configured(v2ray_only) is False
+    from vpn_core.openvpn_sync.services.helpers import node_api_configured as openvpn_configured
+    from vpn_core.v2ray_sync.services.helpers import node_api_configured as v2ray_configured
+
+    assert openvpn_configured(v2ray_only) is False
+    assert v2ray_configured(v2ray_only) is False
     assert bool(v2ray_only.xray_inbound_tag) is True
 
-    assert node_api_configured(openvpn_only) is True
+    assert openvpn_configured(openvpn_only) is True
+    assert v2ray_configured(openvpn_only) is False
     assert bool(openvpn_only.xray_inbound_tag) is False

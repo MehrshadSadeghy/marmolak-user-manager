@@ -8,6 +8,7 @@ import httpx
 
 from vpn_core.openvpn_sync.client.base import OpenVpnClient
 from vpn_core.openvpn_sync.domain.openvpn_user import OpenVpnUser
+from vpn_core.openvpn_sync.domain.traffic_snapshot import OpenVpnTrafficSnapshot
 from vpn_core.server_management_domain.domain.server import Server
 
 LOGGER = logging.getLogger(__name__)
@@ -157,11 +158,29 @@ class HttpOpenVpnClient(OpenVpnClient):
             {"port": port, "proto": proto},
         )
 
-    async def fetch_client_traffic(self, server: Server) -> dict[str, int]:
+    async def fetch_client_traffic(self, server: Server) -> OpenVpnTrafficSnapshot:
         data = await self._request(server, "GET", "/node/vpn/openvpn/traffic")
         clients = data.get("clients") or []
-        return {
-            str(item["common_name"]): int(item["bytes_total"])
-            for item in clients
-            if item.get("common_name") is not None
-        }
+        pending = data.get("pending_disconnects") or []
+        return OpenVpnTrafficSnapshot(
+            live={
+                str(item["common_name"]): int(item["bytes_total"])
+                for item in clients
+                if item.get("common_name") is not None
+            },
+            disconnect={
+                str(item["common_name"]): int(item["bytes_total"])
+                for item in pending
+                if item.get("common_name") is not None
+            },
+        )
+
+    async def consume_disconnect_traffic(self, server: Server, common_names: list[str]) -> None:
+        if not common_names:
+            return
+        await self._request(
+            server,
+            "POST",
+            "/node/vpn/openvpn/traffic/disconnect/consume",
+            {"common_names": common_names},
+        )

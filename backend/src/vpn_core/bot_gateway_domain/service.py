@@ -27,6 +27,9 @@ from vpn_core.openvpn_sync.services.openvpn_migration_helpers import (
     can_migrate_legacy_credential,
 )
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
+from vpn_core.v2ray_sync.domain.commands import ProvisionV2RayCommand
+from vpn_core.v2ray_sync.services.v2ray_capacity_service import V2RayCapacityService
+from vpn_core.v2ray_sync.services.v2ray_provisioning_service import V2RayProvisioningService
 from vpn_core.openvpn_sync.services.server_capacity_service import ServerCapacityService
 from vpn_core.openvpn_sync.services.openvpn_traffic_enforcement_service import (
     OpenVpnTrafficEnforcementService,
@@ -52,6 +55,8 @@ from vpn_core.subscription_domain.domain.subscription import Subscription, Subsc
 from vpn_core.subscription_domain.domain.user import User
 from vpn_core.subscription_domain.service import SubscriptionService
 from vpn_core.user_admin_domain.service import UserAdminService
+from vpn_core.client_subscription_domain.service import ClientSubscriptionService
+from vpn_core.v2ray_sync.services.v2ray_inbound_config_service import V2RayInboundConfigService
 
 
 @dataclass
@@ -149,27 +154,40 @@ class BotGatewayService:
         billing_service: BillingService,
         commerce_service: CommerceService,
         openvpn_service: OpenVpnProvisioningService,
+        v2ray_service: V2RayProvisioningService,
         openvpn_endpoint_service: OpenVpnEndpointService,
         server_service: ServerService,
         capacity_service: ServerCapacityService,
+        v2ray_capacity_service: V2RayCapacityService,
         user_admin_service: UserAdminService,
         traffic_enforcement_service: OpenVpnTrafficEnforcementService,
         expiry_enforcement_service: SubscriptionExpiryEnforcementService,
         openvpn_delivery_service: OpenVpnCredentialDeliveryService,
         subscription_base_url: str,
+        client_subscription_service: ClientSubscriptionService | None = None,
+        v2ray_inbound_config_service: V2RayInboundConfigService | None = None,
     ):
         self._subscription_service = subscription_service
         self._billing_service = billing_service
         self._commerce_service = commerce_service
         self._openvpn_service = openvpn_service
+        self._v2ray_service = v2ray_service
         self._openvpn_endpoint_service = openvpn_endpoint_service
         self._openvpn_delivery_service = openvpn_delivery_service
         self._server_service = server_service
         self._capacity_service = capacity_service
+        self._v2ray_capacity_service = v2ray_capacity_service
         self._user_admin_service = user_admin_service
         self._traffic_enforcement_service = traffic_enforcement_service
         self._expiry_enforcement_service = expiry_enforcement_service
         self._subscription_base_url = subscription_base_url.rstrip("/")
+        self._client_subscription_service = client_subscription_service
+        self._v2ray_inbound_config_service = v2ray_inbound_config_service
+
+    async def get_client_subscription_url(self, user_id: int) -> str:
+        if not self._client_subscription_service:
+            raise HTTPException(status_code=503, detail="Client subscription is not configured")
+        return await self._client_subscription_service.get_subscription_url_for_user(user_id)
 
     async def register_user(
         self,
@@ -225,7 +243,7 @@ class BotGatewayService:
     ) -> PurchasePreview:
         await self._user_admin_service.assert_user_not_blocked(user_id)
         plan = await self._get_active_plan(plan_id)
-        await self._validate_openvpn_server_for_purchase(plan, server_id, require_server=False)
+        await self._validate_server_for_purchase(plan, server_id, require_server=False)
         discounted_plan = await self._apply_plan_discount(user_id, plan)
         price_toman, discount_percent = await self._user_admin_service.apply_discounted_price(
             user_id,
@@ -259,6 +277,8 @@ class BotGatewayService:
         preview = await self.preview_purchase(user_id, plan_id, server_id=server_id)
         if preview.plan.service_type == "openvpn" and server_id is None:
             raise HTTPException(status_code=400, detail="server_id is required for OpenVPN purchase")
+        if preview.plan.service_type == "v2ray" and server_id is None:
+            raise HTTPException(status_code=400, detail="server_id is required for V2Ray purchase")
         if not preview.sufficient_balance:
             raise HTTPException(status_code=400, detail="Insufficient wallet balance")
 
@@ -275,7 +295,7 @@ class BotGatewayService:
         delivery = await self._ensure_delivery_for_subscription(subscription, server_id=server_id)
         if not delivery:
             LOGGER.error(
-                "OpenVPN delivery failed after wallet purchase for subscription %s",
+                "Service delivery failed after wallet purchase for subscription %s",
                 subscription.id,
             )
         wallet = await self._billing_service.get_wallet(user_id)
@@ -449,6 +469,11 @@ class BotGatewayService:
         except Exception:
             LOGGER.exception("Expiry enforcement failed before listing user services")
 
+        try:
+            await self._traffic_enforcement_service.sync_and_enforce()
+        except Exception:
+            LOGGER.exception("Live traffic sync failed before listing user services")
+
         subscriptions = await self._subscription_service.list_subscriptions(
             ListSubscriptionsQuery(user_id=user_id)
         )
@@ -504,13 +529,26 @@ class BotGatewayService:
         subscription_id: int | None,
         service_type: str,
     ) -> list[str]:
-        if subscription_id is None or service_type != "openvpn":
+        if subscription_id is None:
             return []
-        credentials = await self._openvpn_service.get_configs_for_subscription(
-            user_id,
-            subscription_id,
-        )
-        return [credential.common_name for credential in credentials if self._is_valid_ovpn(credential.ovpn_content)]
+        if service_type == "openvpn":
+            credentials = await self._openvpn_service.get_configs_for_subscription(
+                user_id,
+                subscription_id,
+            )
+            return [credential.common_name for credential in credentials if self._is_valid_ovpn(credential.ovpn_content)]
+
+        if service_type == "v2ray":
+            credentials = await self._v2ray_service.get_configs_for_subscription(
+                user_id,
+                subscription_id,
+            )
+            return [
+                credential.email
+                for credential in credentials
+                if self._is_valid_proxy_link(credential.vless_link)
+            ]
+        return []
 
     async def _openvpn_migration_config_ids(
         self,
@@ -599,6 +637,43 @@ class BotGatewayService:
         if not subscription or subscription.user_id != user_id:
             raise HTTPException(status_code=404, detail="Subscription not found")
         return await self._build_openvpn_delivery(subscription, credential)
+
+    async def get_v2ray_config_delivery(
+        self,
+        user_id: int,
+        config_id: str,
+    ) -> ServiceConfigDelivery:
+        config_id = config_id.strip()
+        if len(config_id) != 10 or not config_id.isdigit():
+            raise HTTPException(status_code=400, detail="Config ID must be exactly 10 digits")
+
+        credential = await self._v2ray_service.get_config_by_config_id(user_id, config_id)
+        if not credential or credential.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+        if not self._is_valid_proxy_link(credential.vless_link):
+            subscription_id = credential.subscription_id or 0
+            if subscription_id:
+                subscription = await self._subscription_service.get_subscription(
+                    GetSubscriptionQuery(subscription_id=subscription_id)
+                )
+                if subscription:
+                    return await self.get_subscription_delivery(user_id, subscription_id)
+            raise HTTPException(status_code=404, detail="Configuration not available")
+        if not credential.subscription_id:
+            raise HTTPException(status_code=404, detail="Subscription not linked to config")
+
+        subscription = await self._subscription_service.get_subscription(
+            GetSubscriptionQuery(subscription_id=credential.subscription_id)
+        )
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        return ServiceConfigDelivery(
+            service_type=subscription.service_type,
+            subscription_id=subscription.id,
+            delivery_type="link",
+            content=credential.vless_link,
+            config_id=credential.email,
+        )
 
     async def get_openvpn_credential_view(
         self,
@@ -765,7 +840,7 @@ class BotGatewayService:
         server_id: int | None = None,
     ) -> PurchaseResult:
         plan = await self._get_active_plan(plan_id)
-        await self._validate_openvpn_server_for_purchase(plan, server_id, require_server=True)
+        await self._validate_server_for_purchase(plan, server_id, require_server=True)
         await self._billing_service.debit_wallet(
             DebitWalletCommand(
                 user_id=user_id,
@@ -905,19 +980,44 @@ class BotGatewayService:
         )
         return ServiceConfigDelivery(**payload)
 
+    @staticmethod
+    def _is_valid_proxy_link(content: str) -> bool:
+        return ClientSubscriptionService.is_valid_proxy_link(content)
+
+    @staticmethod
+    def _is_valid_vless_link(content: str) -> bool:
+        return bool(content and content.startswith("vless://"))
+
     async def _delivery_from_existing_credentials(
         self,
         subscription: Subscription,
     ) -> ServiceConfigDelivery | None:
         if subscription.id is None:
             return None
-        credentials = await self._openvpn_service.get_configs_for_subscription(
-            subscription.user_id,
-            subscription.id,
-        )
-        for credential in credentials:
-            if self._is_valid_ovpn(credential.ovpn_content):
-                return await self._build_openvpn_delivery(subscription, credential)
+        if subscription.service_type == "openvpn":
+            credentials = await self._openvpn_service.get_configs_for_subscription(
+                subscription.user_id,
+                subscription.id,
+            )
+            for credential in credentials:
+                if self._is_valid_ovpn(credential.ovpn_content):
+                    return await self._build_openvpn_delivery(subscription, credential)
+            return None
+
+        if subscription.service_type == "v2ray":
+            credentials = await self._v2ray_service.get_configs_for_subscription(
+                subscription.user_id,
+                subscription.id,
+            )
+            for credential in credentials:
+                if self._is_valid_proxy_link(credential.vless_link):
+                    return ServiceConfigDelivery(
+                        service_type=subscription.service_type,
+                        subscription_id=subscription.id,
+                        delivery_type="link",
+                        content=credential.vless_link,
+                        config_id=credential.email,
+                    )
         return None
 
     async def _ensure_delivery_for_subscription(
@@ -937,7 +1037,7 @@ class BotGatewayService:
             )
         except HTTPException as exc:
             LOGGER.error(
-                "OpenVPN provisioning failed for subscription %s: %s",
+                "Service provisioning failed for subscription %s: %s",
                 subscription.id,
                 exc.detail,
             )
@@ -981,12 +1081,29 @@ class BotGatewayService:
             )
 
         if subscription.service_type == "v2ray":
-            url = f"{self._subscription_base_url}/sub/{subscription.uuid}"
+            server = await self._resolve_v2ray_server(server_id)
+            result = await self._v2ray_service.provision(
+                ProvisionV2RayCommand(
+                    user_id=subscription.user_id,
+                    server_id=server.id,
+                    subscription_id=subscription.id,
+                    config_count=1,
+                )
+            )
+            if not result.credentials:
+                raise HTTPException(status_code=500, detail="V2Ray provisioning failed")
+            credential = result.credentials[0]
+            if not self._is_valid_proxy_link(credential.vless_link):
+                raise HTTPException(
+                    status_code=502,
+                    detail="V2Ray node returned invalid configuration (check MOCK_MODE=false)",
+                )
             return ServiceConfigDelivery(
                 service_type=subscription.service_type,
                 subscription_id=subscription.id,
                 delivery_type="link",
-                content=url,
+                content=credential.vless_link,
+                config_id=credential.email,
             )
 
         raise HTTPException(
@@ -1020,6 +1137,54 @@ class BotGatewayService:
             )
         return summaries
 
+    async def list_v2ray_servers(self):
+        servers = await self._v2ray_service.list_v2ray_servers()
+        summaries = []
+        for server in servers:
+            if server.id is None:
+                continue
+            snapshot = await self._v2ray_capacity_service.get_server_capacity_snapshot(server)
+            summaries.append(
+                {
+                    "server": server,
+                    "max_users": snapshot.max_users,
+                    "current_users": snapshot.current_users,
+                    "is_full": snapshot.is_full,
+                    "remaining_slots": snapshot.remaining_slots,
+                }
+            )
+        return summaries
+
+    async def _validate_server_for_purchase(
+        self,
+        plan: Plan,
+        server_id: int | None,
+        *,
+        require_server: bool = False,
+    ) -> None:
+        if plan.service_type == "openvpn":
+            if server_id is None:
+                if require_server:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="server_id is required for OpenVPN purchase",
+                    )
+                return
+            await self._resolve_openvpn_server(server_id)
+            await self._capacity_service.assert_server_has_capacity(server_id)
+            return
+
+        if plan.service_type == "v2ray":
+            if server_id is None:
+                if require_server:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="server_id is required for V2Ray purchase",
+                    )
+                return
+            await self._resolve_v2ray_server(server_id)
+            await self._v2ray_capacity_service.assert_server_has_capacity(server_id)
+
     async def _validate_openvpn_server_for_purchase(
         self,
         plan: Plan,
@@ -1027,17 +1192,21 @@ class BotGatewayService:
         *,
         require_server: bool = False,
     ) -> None:
-        if plan.service_type != "openvpn":
-            return
+        await self._validate_server_for_purchase(
+            plan,
+            server_id,
+            require_server=require_server,
+        )
+
+    async def _resolve_v2ray_server(self, server_id: int | None):
         if server_id is None:
-            if require_server:
-                raise HTTPException(
-                    status_code=400,
-                    detail="server_id is required for OpenVPN purchase",
-                )
-            return
-        await self._resolve_openvpn_server(server_id)
-        await self._capacity_service.assert_server_has_capacity(server_id)
+            raise HTTPException(status_code=400, detail="server_id is required for V2Ray")
+        server = await self._server_service.get_server(GetServerQuery(server_id=server_id))
+        if not server or not server.is_active or not server.v2ray.enabled:
+            raise HTTPException(status_code=400, detail="V2Ray server not available")
+        if not server.xray_inbound_tag:
+            raise HTTPException(status_code=400, detail="V2Ray server is missing xray_inbound_tag")
+        return server
 
     async def _resolve_openvpn_server(self, server_id: int | None):
         if server_id is None:
@@ -1049,3 +1218,17 @@ class BotGatewayService:
 
     async def apply_openvpn_endpoint(self, server_id: int, port: int, proto: str) -> dict:
         return await self._openvpn_endpoint_service.apply_endpoint(server_id, port, proto)
+
+    async def get_v2ray_inbound_config(self, server_id: int) -> dict:
+        if not self._v2ray_inbound_config_service:
+            raise HTTPException(status_code=503, detail="V2Ray inbound config is not configured")
+        return await self._v2ray_inbound_config_service.get_inbound_config(server_id)
+
+    async def patch_v2ray_inbound_config(self, server_id: int, payload: dict) -> dict:
+        if not self._v2ray_inbound_config_service:
+            raise HTTPException(status_code=503, detail="V2Ray inbound config is not configured")
+        return await self._v2ray_inbound_config_service.apply_inbound_config(
+            server_id,
+            payload,
+            partial=True,
+        )

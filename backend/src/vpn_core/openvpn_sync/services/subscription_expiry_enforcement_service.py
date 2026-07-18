@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 from vpn_core.openvpn_sync.domain.commands import DeactivateOpenVpnCommand
 from vpn_core.openvpn_sync.services.openvpn_provisioning_service import OpenVpnProvisioningService
+from vpn_core.v2ray_sync.domain.commands import DeactivateV2RayCommand
+from vpn_core.v2ray_sync.services.v2ray_provisioning_service import V2RayProvisioningService
 from vpn_core.subscription_domain.domain.subscription import SubscriptionStatus
 from vpn_core.subscription_domain.repository.base import SubscriptionRepository
 
@@ -19,16 +21,18 @@ class ExpiryEnforcementSummary:
 
 
 class SubscriptionExpiryEnforcementService:
-    """Revokes OpenVPN access and marks subscriptions expired when expire_at passes."""
+    """Revokes VPN access and marks subscriptions expired when expire_at passes."""
 
     def __init__(
         self,
         *,
         subscription_repository: SubscriptionRepository,
         provisioning_service: OpenVpnProvisioningService,
+        v2ray_provisioning_service: V2RayProvisioningService | None = None,
     ):
         self._subscription_repository = subscription_repository
         self._provisioning_service = provisioning_service
+        self._v2ray_provisioning_service = v2ray_provisioning_service
 
     async def enforce(self) -> ExpiryEnforcementSummary:
         summary = ExpiryEnforcementSummary()
@@ -43,6 +47,14 @@ class SubscriptionExpiryEnforcementService:
                 if subscription.service_type == "openvpn":
                     revoked = await self._provisioning_service.deactivate(
                         DeactivateOpenVpnCommand(
+                            user_id=subscription.user_id,
+                            subscription_id=subscription.id,
+                            reason="subscription_expired",
+                        )
+                    )
+                elif subscription.service_type == "v2ray" and self._v2ray_provisioning_service:
+                    revoked = await self._v2ray_provisioning_service.deactivate(
+                        DeactivateV2RayCommand(
                             user_id=subscription.user_id,
                             subscription_id=subscription.id,
                             reason="subscription_expired",

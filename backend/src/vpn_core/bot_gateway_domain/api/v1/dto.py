@@ -111,6 +111,12 @@ class UserServiceItemDTO(BaseModel):
 
 class UserServicesResponseDTO(BaseModel):
     services: list[UserServiceItemDTO]
+    subscription_url: str | None = None
+
+
+class ClientSubscriptionUrlResponseDTO(BaseModel):
+    subscription_url: str
+    apps_hint: str = "Add this URL in Hiddify, Happ, v2rayNG, or Streisand as a subscription link."
 
 
 class SupportResponseDTO(BaseModel):
@@ -202,6 +208,33 @@ class OpenVpnServerListResponseDTO(BaseModel):
     servers: list[OpenVpnServerSummaryDTO]
 
 
+class V2RayServerSummaryDTO(BaseModel):
+    id: int
+    name: str
+    vpn_host: str
+    vpn_port: int
+    ws_path: str
+    network: str
+    security: str
+    status: str
+    max_users: int
+    current_users: int
+    is_full: bool
+    remaining_slots: int
+
+
+class AdminV2RayServerSummaryDTO(V2RayServerSummaryDTO):
+    pass
+
+
+class AdminV2RayServerListResponseDTO(BaseModel):
+    servers: list[AdminV2RayServerSummaryDTO]
+
+
+class V2RayServerListResponseDTO(BaseModel):
+    servers: list[V2RayServerSummaryDTO]
+
+
 class ApplyOpenVpnEndpointDTO(BaseModel):
     port: int = Field(..., ge=1, le=65535)
     proto: str = Field(..., min_length=3, max_length=3)
@@ -219,6 +252,63 @@ class ApplyOpenVpnEndpointResponseDTO(BaseModel):
     firewall_rule_added: bool
     env_file_updated: bool
     message: str
+
+
+class V2RayInboundConfigDTO(BaseModel):
+    inbound_tag: str
+    listen: str
+    port: int
+    protocol: str
+    network: str
+    security: str
+    server_host: str
+    ws_path: str | None = None
+    grpc_service_name: str | None = None
+    tcp_header_type: str | None = None
+    sni: str | None = None
+    fingerprint: str | None = None
+    enable_udp: bool = False
+    shadowsocks_method: str = "aes-256-gcm"
+
+
+class V2RayInboundConfigResponseDTO(V2RayInboundConfigDTO):
+    server_id: int
+    server_name: str
+
+
+class PatchV2RayInboundConfigDTO(BaseModel):
+    inbound_tag: str | None = None
+    listen: str | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
+    protocol: str | None = None
+    network: str | None = None
+    security: str | None = None
+    server_host: str | None = None
+    ws_path: str | None = None
+    grpc_service_name: str | None = None
+    tcp_header_type: str | None = None
+    sni: str | None = None
+    fingerprint: str | None = None
+    enable_udp: bool | None = None
+    shadowsocks_method: str | None = None
+
+
+class ApplyV2RayInboundConfigResponseDTO(BaseModel):
+    status: str = "success"
+    server_id: int
+    server_name: str
+    inbound_tag: str
+    listen: str
+    port: int
+    protocol: str
+    network: str
+    security: str
+    server_host: str
+    xray_config_updated: bool
+    env_file_updated: bool
+    xray_reloaded: bool
+    previous: V2RayInboundConfigDTO | None = None
+    message: str = ""
 
 
 class PasarguardPanelSettingsDTO(BaseModel):

@@ -49,12 +49,20 @@ class PostgresManager(Manager):
                     "blocked_reason": "TEXT",
                     "blocked_by_admin_telegram_id": "VARCHAR(64)",
                     "is_collaborator": "BOOLEAN NOT NULL DEFAULT FALSE",
+                    "subscription_token": "VARCHAR(64)",
                 }
                 for column_name, column_type in user_patches.items():
                     if column_name not in user_columns:
                         conn.execute(
                             text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
                         )
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_subscription_token "
+                        "ON users (subscription_token) "
+                        "WHERE subscription_token IS NOT NULL"
+                    )
+                )
 
             if "openvpn_client_credentials" in table_names:
                 credential_columns = {
@@ -82,6 +90,28 @@ class PostgresManager(Manager):
                                 f"ALTER TABLE openvpn_client_credentials "
                                 f"ADD COLUMN {column_name} {column_type}"
                             )
+                        )
+
+            if "servers" in table_names:
+                server_columns = {
+                    column["name"] for column in inspector.get_columns("servers")
+                }
+                server_patches = {
+                    "v2ray_enabled": "BOOLEAN NOT NULL DEFAULT FALSE",
+                    "v2ray_node_api_secret": "VARCHAR(256)",
+                    "v2ray_node_api_port": "INTEGER NOT NULL DEFAULT 8092",
+                    "v2ray_vpn_host": "VARCHAR(255)",
+                    "v2ray_vpn_port": "INTEGER NOT NULL DEFAULT 443",
+                    "v2ray_ws_path": "VARCHAR(255) NOT NULL DEFAULT '/v2ray'",
+                    "v2ray_network": "VARCHAR(16) NOT NULL DEFAULT 'ws'",
+                    "v2ray_security": "VARCHAR(16) NOT NULL DEFAULT 'tls'",
+                    "v2ray_sni": "VARCHAR(255)",
+                    "v2ray_fingerprint": "VARCHAR(32)",
+                }
+                for column_name, column_type in server_patches.items():
+                    if column_name not in server_columns:
+                        conn.execute(
+                            text(f"ALTER TABLE servers ADD COLUMN {column_name} {column_type}")
                         )
 
     async def run(self) -> None:
